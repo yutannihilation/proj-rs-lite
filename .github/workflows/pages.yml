@@ -48,6 +48,8 @@ jobs:
           cargo binstall --force -y wasm-pack
 
       - name: Build WebAssembly package
+        env:
+          RUSTFLAGS: -C link-arg=--no-entry
         run: |
           rm -rf npm
           cd proj-lite-web
