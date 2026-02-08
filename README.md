@@ -46,7 +46,6 @@ PROJ generates `proj.db` at build time.
 Current supported WASM target:
 
 - `wasm32-unknown-emscripten`
-- `wasm32-unknown-unknown` (for npm/web packaging via `proj-lite-web`)
 
 CI includes a dedicated Emscripten check job.
 
@@ -127,12 +126,12 @@ cargo test
 ## Build npm package from Rust WASM
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown -p proj-lite-web
+cargo build --release --target wasm32-unknown-emscripten -p proj-lite-web
 wasm-bindgen \
   --out-dir ./npm \
   --typescript \
   --target web \
-  ./target/wasm32-unknown-unknown/release/proj_lite_web.wasm
+  ./target/wasm32-unknown-emscripten/release/proj_lite_web.wasm
 ```
 
 This generates JS/TS bindings and `.wasm` under `npm/` (with metadata in `npm/package.json`).
