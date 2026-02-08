@@ -9,12 +9,15 @@ const PROJ_VERSION: &str = "9.7.1";
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=SQLITE3_BIN");
     println!("cargo:rerun-if-changed=vendor/proj-9.7.1.tar.gz");
+    println!("cargo:rerun-if-changed=shim");
+    println!("cargo:rerun-if-changed=sqlite3");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
     let tarball = manifest_dir.join("vendor").join("proj-9.7.1.tar.gz");
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
     let src_root = out_dir.join("PROJSRC").join("proj");
     let proj_src = src_root.join(format!("proj-{PROJ_VERSION}"));
+    let target = env::var("TARGET").unwrap_or_default();
 
     unpack_tarball(&tarball, &src_root)?;
 
@@ -65,25 +68,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     config.define("EXE_SQLITE3", sqlite3_exe.display().to_string());
 
-    // IMPORTANT:
-    // Always prefer libsqlite3-sys bundled outputs when available so CMake
-    // links against the same sqlite build Cargo produced.
-    if let Ok(sqlite_include) = env::var("DEP_SQLITE3_INCLUDE") {
-        config.define("SQLite3_INCLUDE_DIR", sqlite_include);
-    }
-    if let Ok(sqlite_lib_dir) = env::var("DEP_SQLITE3_LIB_DIR") {
-        let lib_dir = PathBuf::from(sqlite_lib_dir);
-        let sqlite3_msvc = lib_dir.join("sqlite3.lib");
-        let sqlite3_gnu = lib_dir.join("libsqlite3.a");
-        let sqlite3_lib = if sqlite3_msvc.exists() {
-            sqlite3_msvc
-        } else {
-            sqlite3_gnu
-        };
-        config.define("SQLite3_LIBRARY", sqlite3_lib.display().to_string());
+    if target == "wasm32-unknown-unknown" {
+        // IMPORTANT:
+        // For wasm32-unknown-unknown, compile sqlite with local shims that provide
+        // libc-like functions required by sqlite amalgamation.
+        let (sqlite_include, sqlite_library) = build_sqlite_with_shim(&manifest_dir, &out_dir);
+        config.define("SQLite3_INCLUDE_DIR", sqlite_include.display().to_string());
+        config.define("SQLite3_LIBRARY", sqlite_library.display().to_string());
+
+        // Cross-compile PROJ C/C++ code to wasm32-unknown-unknown with clang.
+        config.define("CMAKE_C_COMPILER", "clang");
+        config.define("CMAKE_CXX_COMPILER", "clang++");
+        config.define("CMAKE_AR", "llvm-ar");
+        config.define("CMAKE_RANLIB", "llvm-ranlib");
+        config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
+        let wasm_flags = "--target=wasm32-unknown-unknown";
+        config.define("CMAKE_C_FLAGS", wasm_flags);
+        config.define("CMAKE_CXX_FLAGS", wasm_flags);
+    } else {
+        // IMPORTANT:
+        // Prefer libsqlite3-sys bundled outputs when available so CMake links
+        // against the same sqlite build Cargo produced.
+        if let Ok(sqlite_include) = env::var("DEP_SQLITE3_INCLUDE") {
+            config.define("SQLite3_INCLUDE_DIR", sqlite_include);
+        }
+        if let Ok(sqlite_lib_dir) = env::var("DEP_SQLITE3_LIB_DIR") {
+            let lib_dir = PathBuf::from(sqlite_lib_dir);
+            let sqlite3_msvc = lib_dir.join("sqlite3.lib");
+            let sqlite3_gnu = lib_dir.join("libsqlite3.a");
+            let sqlite3_lib = if sqlite3_msvc.exists() {
+                sqlite3_msvc
+            } else {
+                sqlite3_gnu
+            };
+            config.define("SQLite3_LIBRARY", sqlite3_lib.display().to_string());
+        }
     }
 
-    let target = env::var("TARGET").unwrap_or_default();
     if target == "wasm32-unknown-emscripten" {
         // Keep in sync with PROJ's own Emscripten build recommendations.
         let flags = "-pthread -matomics -mbulk-memory -fexceptions";
@@ -135,4 +156,95 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
     env::split_paths(&path)
         .map(|dir| dir.join(name))
         .find(|candidate| candidate.exists())
+}
+
+fn build_sqlite_with_shim(manifest_dir: &Path, out_dir: &Path) -> (PathBuf, PathBuf) {
+    const SQLITE_FEATURES: [&str; 23] = [
+        "-DSQLITE_OS_OTHER",
+        "-DSQLITE_USE_URI",
+        "-DSQLITE_THREADSAFE=0",
+        "-DSQLITE_TEMP_STORE=2",
+        "-DSQLITE_DEFAULT_CACHE_SIZE=-16384",
+        "-DSQLITE_DEFAULT_PAGE_SIZE=8192",
+        "-DSQLITE_OMIT_DEPRECATED",
+        "-DSQLITE_OMIT_LOAD_EXTENSION",
+        "-DSQLITE_OMIT_SHARED_CACHE",
+        "-DSQLITE_ENABLE_UNLOCK_NOTIFY",
+        "-DSQLITE_ENABLE_API_ARMOR",
+        "-DSQLITE_ENABLE_BYTECODE_VTAB",
+        "-DSQLITE_ENABLE_DBPAGE_VTAB",
+        "-DSQLITE_ENABLE_DBSTAT_VTAB",
+        "-DSQLITE_ENABLE_FTS5",
+        "-DSQLITE_ENABLE_MATH_FUNCTIONS",
+        "-DSQLITE_ENABLE_OFFSET_SQL_FUNC",
+        "-DSQLITE_ENABLE_PREUPDATE_HOOK",
+        "-DSQLITE_ENABLE_RTREE",
+        "-DSQLITE_ENABLE_SESSION",
+        "-DSQLITE_ENABLE_STMTVTAB",
+        "-DSQLITE_ENABLE_UNKNOWN_SQL_FUNCTION",
+        "-DSQLITE_ENABLE_COLUMN_METADATA",
+    ];
+    const MUSL_SOURCES: [&str; 36] = [
+        "string/memchr.c",
+        "string/memrchr.c",
+        "string/stpcpy.c",
+        "string/stpncpy.c",
+        "string/strcat.c",
+        "string/strchr.c",
+        "string/strchrnul.c",
+        "string/strcmp.c",
+        "string/strcpy.c",
+        "string/strcspn.c",
+        "string/strlen.c",
+        "string/strncat.c",
+        "string/strncmp.c",
+        "string/strncpy.c",
+        "string/strrchr.c",
+        "string/strspn.c",
+        "stdlib/atoi.c",
+        "stdlib/bsearch.c",
+        "stdlib/qsort.c",
+        "stdlib/qsort_nr.c",
+        "stdlib/strtod.c",
+        "stdlib/strtol.c",
+        "math/__fpclassifyl.c",
+        "math/acosh.c",
+        "math/asinh.c",
+        "math/atanh.c",
+        "math/fmodl.c",
+        "math/scalbn.c",
+        "math/scalbnl.c",
+        "math/sqrt.c",
+        "math/trunc.c",
+        "errno/__errno_location.c",
+        "stdio/__toread.c",
+        "stdio/__uflow.c",
+        "internal/floatscan.c",
+        "internal/shgetc.c",
+    ];
+
+    let shim_dir = manifest_dir.join("shim");
+    let sqlite_dir = manifest_dir.join("sqlite3");
+
+    let mut cc = cc::Build::new();
+    cc.warnings(false)
+        .flag("-Wno-macro-redefined")
+        .include(&shim_dir)
+        .include(shim_dir.join("musl/arch/generic"))
+        .include(shim_dir.join("musl/include"))
+        .file(shim_dir.join("printf/printf.c"))
+        .file(sqlite_dir.join("sqlite3.c"))
+        .flag("-DPRINTF_ALIAS_STANDARD_FUNCTION_NAMES_HARD")
+        .flag("-include")
+        .flag(shim_dir.join("wasm-shim.h").display().to_string());
+
+    for src in MUSL_SOURCES {
+        cc.file(shim_dir.join("musl").join(src));
+    }
+    cc.flags(&SQLITE_FEATURES);
+    cc.compile("sqlite3shim");
+
+    let include = sqlite_dir;
+    let lib = out_dir.join("libsqlite3shim.a");
+    (include, lib)
 }

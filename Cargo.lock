@@ -236,6 +236,7 @@ dependencies = [
 name = "proj-lite-sys"
 version = "0.1.0"
 dependencies = [
+ "cc",
  "cmake",
  "flate2",
  "libsqlite3-sys",

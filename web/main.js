@@ -1,4 +1,4 @@
-import init, { transform2_known_crs } from "../npm/proj_lite_web.js";
+import init, { transform2_known_crs } from "./npm/proj_lite_web.js";
 
 const resultEl = document.getElementById("result");
 const runBtn = document.getElementById("run");

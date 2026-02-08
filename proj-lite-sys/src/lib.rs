@@ -2,6 +2,7 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 extern crate libsqlite3_sys;
 extern crate link_cplusplus;
 

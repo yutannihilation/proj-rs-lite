@@ -5,10 +5,13 @@ edition = "2024"
 links = "proj"
 
 [dependencies]
-libsqlite3-sys = { version = "0.35", features = ["bundled"] }
 link-cplusplus = "1.0"
 
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+libsqlite3-sys = { version = "0.35", features = ["bundled"] }
+
 [build-dependencies]
+cc = "1.2"
 cmake = "0.1"
 flate2 = "1.1"
 tar = "0.4"
