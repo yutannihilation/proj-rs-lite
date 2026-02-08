@@ -37,7 +37,7 @@ jobs:
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 3.1.73
+          version: latest
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
