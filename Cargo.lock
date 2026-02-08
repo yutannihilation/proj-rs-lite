@@ -248,6 +248,7 @@ dependencies = [
 name = "proj-lite-web"
 version = "0.1.0"
 dependencies = [
+ "geo-traits",
  "proj-lite",
  "wasm-bindgen",
 ]

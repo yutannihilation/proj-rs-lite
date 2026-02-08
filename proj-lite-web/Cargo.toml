@@ -8,4 +8,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 proj-lite = { path = ".." }
+geo-traits = { version = "0.3.0", default-features = false }
 wasm-bindgen = "0.2.100"
