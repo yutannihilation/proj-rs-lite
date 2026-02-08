@@ -2,6 +2,57 @@
 
 Minimal Rust bindings for PROJ focused on point transforms.
 
+## WASM Notes (Current Setup)
+
+This project intentionally uses `wasm32-unknown-emscripten` for browser builds.
+
+- Why not `wasm32-unknown-unknown`:
+  - PROJ is C/C++ heavy.
+  - In this codebase, `wasm32-unknown-unknown` failed on C++ toolchain/linking paths (`link-cplusplus`/clang target compatibility).
+  - `wasm32-unknown-emscripten` is the practical target here.
+- Why `wasm32-unknown-emscripten`:
+  - It can compile and link the bundled PROJ + sqlite stack in this repository.
+  - It works with the current `proj-lite-sys` CMake build flow.
+
+### RUSTFLAGS used for web build
+
+Current working flags:
+
+```bash
+RUSTFLAGS="-C link-arg=--no-entry -C link-arg=-sSTANDALONE_WASM=0 -C link-arg=-sFILESYSTEM=0"
+```
+
+Meaning:
+
+- `--no-entry`: build reactor-style wasm (library module, not app entrypoint).
+- `-sSTANDALONE_WASM=0`: generate non-standalone wasm expected by JS host/runtime.
+- `-sFILESYSTEM=0`: disables Emscripten FS glue we do not need for this demo.
+
+These flags are now reflected in `.github/workflows/pages.yml`.
+
+### Browser gap we had to bridge
+
+`wasm32-unknown-emscripten` output imports modules/symbols that browsers do not provide by default:
+
+- module import `"wasi_snapshot_preview1"` (WASI symbols like `clock_time_get`, `fd_write`, etc.)
+- module import `"env"` (Emscripten syscall stubs like `__syscall_*`)
+
+To run in browser we provide:
+
+- import map in `web/index.html` mapping:
+  - `"wasi_snapshot_preview1"` -> `./npm/wasi_snapshot_preview1.js`
+  - `"env"` -> `./npm/env.js`
+- shim modules:
+  - `web/wasi_snapshot_preview1.js`
+  - `web/env.js`
+
+And in runtime:
+
+- instantiate `proj_lite_web_bg.wasm` directly with those imports
+- call `_initialize()` before using exports
+
+Without `_initialize()`, PROJ initialization fails at runtime.
+
 ## Disclaimer
 
 The current codebase was initially generated with assistance from Codex.
@@ -128,7 +179,7 @@ cargo test
 ```bash
 rm -rf npm
 cd proj-lite-web
-RUSTFLAGS="-C link-arg=--no-entry -C link-arg=-sSTANDALONE_WASM=0" wasm-pack build \
+RUSTFLAGS="-C link-arg=--no-entry -C link-arg=-sSTANDALONE_WASM=0 -C link-arg=-sFILESYSTEM=0" wasm-pack build \
   --release \
   --target web \
   --out-dir ../npm \
@@ -143,7 +194,7 @@ This generates JS/WASM package artifacts under `npm/`.
 ## Simple web demo
 
 After generating `npm/` artifacts, serve the repository root with any static server and open `web/index.html`.
-The page imports `../npm/proj_lite_web.js` and runs a single-point CRS transform.
+The page loads `./npm/proj_lite_web_bg.wasm` directly and runs a single-point CRS transform.
 
 ## GitHub Pages deployment
 

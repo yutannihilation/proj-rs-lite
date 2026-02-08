@@ -1,8 +1,9 @@
 use geo_traits::CoordTrait;
 use proj_sys::{
     PJ_CONTEXT, PJ_COORD, PJ_DIRECTION_PJ_FWD, PJ_XYZT, PJconsts, proj_context_create,
-    proj_context_destroy, proj_context_errno, proj_create, proj_create_crs_to_crs, proj_destroy,
-    proj_errno, proj_errno_reset, proj_errno_string, proj_normalize_for_visualization, proj_trans,
+    proj_context_destroy, proj_context_errno, proj_context_errno_string, proj_create,
+    proj_create_crs_to_crs, proj_destroy, proj_errno, proj_errno_reset, proj_errno_string,
+    proj_normalize_for_visualization, proj_trans,
 };
 use std::ffi::{CStr, CString};
 use std::ptr;
@@ -160,7 +161,15 @@ fn create_context() -> Result<*mut PJ_CONTEXT, ProjError> {
 
 fn context_error_message(ctx: *mut PJ_CONTEXT) -> String {
     let err = unsafe { proj_context_errno(ctx) };
-    proj_error_message(err)
+    if err == 0 {
+        return "unknown error".to_string();
+    }
+    let ptr = unsafe { proj_context_errno_string(ctx, err) };
+    if ptr.is_null() {
+        return proj_error_message(err);
+    }
+    let text = unsafe { CStr::from_ptr(ptr) };
+    text.to_string_lossy().into_owned()
 }
 
 fn proj_error_message(err: i32) -> String {

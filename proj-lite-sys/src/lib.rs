@@ -59,8 +59,9 @@ pub union PJ_COORD {
 
 unsafe extern "C" {
     pub fn proj_context_create() -> *mut PJ_CONTEXT;
-    pub fn proj_context_destroy(ctx: *mut PJ_CONTEXT);
+    pub fn proj_context_destroy(ctx: *mut PJ_CONTEXT) -> c_int;
     pub fn proj_context_errno(ctx: *const PJ_CONTEXT) -> c_int;
+    pub fn proj_context_errno_string(ctx: *mut PJ_CONTEXT, err: c_int) -> *const c_char;
 
     pub fn proj_create(ctx: *mut PJ_CONTEXT, definition: *const c_char) -> *mut PJconsts;
     pub fn proj_create_crs_to_crs(
@@ -73,9 +74,9 @@ unsafe extern "C" {
         ctx: *mut PJ_CONTEXT,
         obj: *mut PJconsts,
     ) -> *mut PJconsts;
-    pub fn proj_destroy(obj: *mut PJconsts);
+    pub fn proj_destroy(obj: *mut PJconsts) -> c_int;
 
-    pub fn proj_errno_reset(obj: *mut PJconsts);
+    pub fn proj_errno_reset(obj: *mut PJconsts) -> c_int;
     pub fn proj_errno(obj: *const PJconsts) -> c_int;
     pub fn proj_errno_string(err: c_int) -> *const c_char;
 

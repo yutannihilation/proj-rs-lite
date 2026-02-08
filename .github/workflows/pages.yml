@@ -49,7 +49,7 @@ jobs:
 
       - name: Build WebAssembly package
         env:
-          RUSTFLAGS: -C link-arg=--no-entry -C link-arg=-sSTANDALONE_WASM=0
+          RUSTFLAGS: -C link-arg=--no-entry -C link-arg=-sSTANDALONE_WASM=0 -C link-arg=-sFILESYSTEM=0
         run: |
           rm -rf npm
           cd proj-lite-web
@@ -68,6 +68,8 @@ jobs:
           mkdir -p site/npm
           cp web/index.html site/index.html
           cp web/main.js site/main.js
+          cp web/wasi_snapshot_preview1.js site/npm/wasi_snapshot_preview1.js
+          cp web/env.js site/npm/env.js
           cp -r npm/. site/npm/
 
       - name: Setup Pages

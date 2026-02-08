@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if target == "wasm32-unknown-emscripten" {
         // Keep in sync with PROJ's own Emscripten build recommendations.
-        let flags = "-pthread -matomics -mbulk-memory -fexceptions";
+        let flags = "-fwasm-exceptions";
         config.define("CMAKE_C_FLAGS", flags);
         config.define("CMAKE_CXX_FLAGS", flags);
     }
