@@ -1,2 +1,6 @@
 /target
 /references
+/npm/proj_lite_web.js
+/npm/proj_lite_web_bg.js
+/npm/proj_lite_web_bg.wasm
+/npm/proj_lite_web.d.ts

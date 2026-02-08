@@ -12,4 +12,4 @@ thiserror = "2.0"
 wkt = { version = "0.14.0", default-features = false }
 
 [workspace]
-members = ["proj-lite-sys"]
+members = ["proj-lite-sys", "proj-lite-web"]

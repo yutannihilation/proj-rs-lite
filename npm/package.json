@@ -1,0 +1,15 @@
+{
+  "name": "proj-lite-web",
+  "version": "0.0.1",
+  "files": [
+    "proj_lite_web_bg.wasm",
+    "proj_lite_web.js",
+    "proj_lite_web_bg.js",
+    "proj_lite_web.d.ts"
+  ],
+  "module": "proj_lite_web.js",
+  "types": "proj_lite_web.d.ts",
+  "sideEffects": [
+    "./proj_lite_web.js"
+  ]
+}

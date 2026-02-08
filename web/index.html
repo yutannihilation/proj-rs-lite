@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>proj-lite wasm demo</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        margin: 2rem;
+        line-height: 1.5;
+      }
+      label {
+        display: inline-block;
+        width: 6rem;
+      }
+      input {
+        margin-bottom: 0.5rem;
+        min-width: 18rem;
+      }
+      button {
+        margin-top: 1rem;
+      }
+      pre {
+        margin-top: 1rem;
+        padding: 0.75rem;
+        background: #f6f8fa;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>proj-lite wasm demo</h1>
+    <p>Transforms one 2D point using PROJ in WebAssembly.</p>
+
+    <div><label>From CRS</label><input id="from" value="EPSG:2230" /></div>
+    <div><label>To CRS</label><input id="to" value="EPSG:26946" /></div>
+    <div><label>X</label><input id="x" value="4760096.421921" /></div>
+    <div><label>Y</label><input id="y" value="3744293.729449" /></div>
+
+    <button id="run">Transform</button>
+    <pre id="result">Ready.</pre>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+  </html>
