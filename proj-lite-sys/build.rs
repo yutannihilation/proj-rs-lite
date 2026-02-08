@@ -1,7 +1,6 @@
 use flate2::read::GzDecoder;
 use std::env;
 use std::fs::File;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
@@ -55,17 +54,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Selection order:
     // 1) SQLITE3_BIN override
     // 2) Platform default binary in PATH
-    // 3) Python fallback shim
     let sqlite3_exe = match env::var("SQLITE3_BIN") {
         Ok(val) => PathBuf::from(val),
-        Err(_) if cfg!(windows) => match find_in_path("sqlite3.exe") {
-            Some(path) => path,
-            None => create_sqlite3_shim(&out_dir)?,
-        },
-        Err(_) => match find_in_path("sqlite3") {
-                Some(path) => path,
-                None => create_sqlite3_shim(&out_dir)?,
-            },
+        Err(_) if cfg!(windows) => find_in_path("sqlite3.exe").ok_or_else(|| {
+            "sqlite3.exe not found in PATH; set SQLITE3_BIN or install sqlite3".to_string()
+        })?,
+        Err(_) => find_in_path("sqlite3").ok_or_else(|| {
+            "sqlite3 not found in PATH; set SQLITE3_BIN or install sqlite3".to_string()
+        })?,
     };
     config.define("EXE_SQLITE3", sqlite3_exe.display().to_string());
 
@@ -132,51 +128,6 @@ fn unpack_tarball(tarball: &Path, dst: &Path) -> Result<(), Box<dyn std::error::
     let mut archive = Archive::new(tar);
     archive.unpack(dst)?;
     Ok(())
-}
-
-fn create_sqlite3_shim(out_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let py = out_dir.join("sqlite3_shim.py");
-    std::fs::write(
-        &py,
-        r#"import sqlite3
-import sys
-
-if len(sys.argv) != 2:
-    sys.stderr.write("usage: sqlite3_shim.py <db-path>\n")
-    sys.exit(2)
-
-conn = sqlite3.connect(sys.argv[1])
-try:
-    # Read raw bytes then decode safely for Windows CI environments where
-    # redirected stdin can contain non-UTF8 surrogate sequences.
-    sql = sys.stdin.buffer.read().decode("utf-8", errors="replace")
-    conn.executescript(sql)
-    conn.commit()
-finally:
-    conn.close()
-"#,
-    )?;
-
-    if cfg!(windows) {
-        let bat = out_dir.join("sqlite3_shim.bat");
-        let mut file = std::fs::File::create(&bat)?;
-        writeln!(file, "@echo off")?;
-        writeln!(file, "python \"{}\" %*", py.display())?;
-        Ok(bat)
-    } else {
-        let sh = out_dir.join("sqlite3_shim.sh");
-        let mut file = std::fs::File::create(&sh)?;
-        writeln!(file, "#!/bin/sh")?;
-        writeln!(file, "python3 \"{}\" \"$@\"", py.display())?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut perms = std::fs::metadata(&sh)?.permissions();
-            perms.set_mode(0o755);
-            std::fs::set_permissions(&sh, perms)?;
-        }
-        Ok(sh)
-    }
 }
 
 fn find_in_path(name: &str) -> Option<PathBuf> {

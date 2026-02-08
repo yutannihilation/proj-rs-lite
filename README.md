@@ -39,7 +39,7 @@ PROJ generates `proj.db` at build time.
 - Otherwise:
   - On Windows: `sqlite3.exe` is searched in `PATH`.
   - On non-Windows: `sqlite3` is searched in `PATH`.
-  - If not found, a small Python-based sqlite shim is used as a fallback.
+  - If not found, the build fails.
 
 ## WASM support
 
