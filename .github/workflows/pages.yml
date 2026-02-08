@@ -49,7 +49,7 @@ jobs:
 
       - name: Build WebAssembly package
         env:
-          RUSTFLAGS: -C link-arg=--no-entry
+          RUSTFLAGS: -C link-arg=--no-entry -C link-arg=-sSTANDALONE_WASM=0
         run: |
           rm -rf npm
           cd proj-lite-web

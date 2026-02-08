@@ -128,7 +128,7 @@ cargo test
 ```bash
 rm -rf npm
 cd proj-lite-web
-RUSTFLAGS="-C link-arg=--no-entry" wasm-pack build \
+RUSTFLAGS="-C link-arg=--no-entry -C link-arg=-sSTANDALONE_WASM=0" wasm-pack build \
   --release \
   --target web \
   --out-dir ../npm \
