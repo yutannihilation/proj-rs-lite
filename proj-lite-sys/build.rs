@@ -119,7 +119,8 @@ if len(sys.argv) != 2:
 
 conn = sqlite3.connect(sys.argv[1])
 try:
-    conn.executescript(sys.stdin.read())
+    sql = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    conn.executescript(sql)
     conn.commit()
 finally:
     conn.close()
