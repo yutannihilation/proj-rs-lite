@@ -88,8 +88,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.define("CMAKE_AR", llvm_ar.display().to_string());
         config.define("CMAKE_RANLIB", llvm_ranlib.display().to_string());
         config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
-        let wasm_flags = "--target=wasm32-unknown-unknown";
-        config.define("CMAKE_C_FLAGS", wasm_flags);
+        let shim_include = manifest_dir.join("shim").join("musl").join("include");
+        let shim_arch_include = manifest_dir
+            .join("shim")
+            .join("musl")
+            .join("arch")
+            .join("generic");
+        // Use local shim headers so libc headers like string.h/stdio.h are available
+        // under wasm32-unknown-unknown where no libc sysroot is provided by default.
+        let wasm_flags = format!(
+            "--target=wasm32-unknown-unknown -I{} -I{}",
+            shim_include.display(),
+            shim_arch_include.display()
+        );
+        config.define("CMAKE_C_FLAGS", wasm_flags.clone());
         config.define("CMAKE_CXX_FLAGS", wasm_flags);
     } else {
         // IMPORTANT:
