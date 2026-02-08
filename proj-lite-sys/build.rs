@@ -1,6 +1,7 @@
 use flate2::read::GzDecoder;
 use std::env;
 use std::fs::File;
+use std::io;
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
@@ -77,10 +78,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.define("SQLite3_LIBRARY", sqlite_library.display().to_string());
 
         // Cross-compile PROJ C/C++ code to wasm32-unknown-unknown with clang.
-        config.define("CMAKE_C_COMPILER", "clang");
-        config.define("CMAKE_CXX_COMPILER", "clang++");
-        config.define("CMAKE_AR", "llvm-ar");
-        config.define("CMAKE_RANLIB", "llvm-ranlib");
+        // Use absolute paths so CMake does not mis-resolve tool names.
+        let clang = find_required_tool(&["clang"])?;
+        let clangxx = find_required_tool(&["clang++"])?;
+        let llvm_ar = find_required_tool(&["llvm-ar", "llvm-ar-18", "llvm-ar-17"])?;
+        let llvm_ranlib = find_required_tool(&["llvm-ranlib", "llvm-ranlib-18", "llvm-ranlib-17"])?;
+        config.define("CMAKE_C_COMPILER", clang.display().to_string());
+        config.define("CMAKE_CXX_COMPILER", clangxx.display().to_string());
+        config.define("CMAKE_AR", llvm_ar.display().to_string());
+        config.define("CMAKE_RANLIB", llvm_ranlib.display().to_string());
         config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
         let wasm_flags = "--target=wasm32-unknown-unknown";
         config.define("CMAKE_C_FLAGS", wasm_flags);
@@ -156,6 +162,18 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
     env::split_paths(&path)
         .map(|dir| dir.join(name))
         .find(|candidate| candidate.exists())
+}
+
+fn find_required_tool(candidates: &[&str]) -> Result<PathBuf, io::Error> {
+    for name in candidates {
+        if let Some(path) = find_in_path(name) {
+            return Ok(path);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        format!("required tool not found in PATH: {}", candidates.join(" or ")),
+    ))
 }
 
 fn build_sqlite_with_shim(manifest_dir: &Path, out_dir: &Path) -> (PathBuf, PathBuf) {
