@@ -46,7 +46,6 @@ PROJ generates `proj.db` at build time.
 Current supported WASM target:
 
 - `wasm32-unknown-emscripten`
-- `wasm32-unknown-unknown` (npm/web packaging via `proj-lite-web`)
 
 CI includes a dedicated Emscripten check job.
 
@@ -127,15 +126,19 @@ cargo test
 ## Build npm package from Rust WASM
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown -p proj-lite-web
-wasm-bindgen \
-  --out-dir ./npm \
-  --typescript \
+rm -rf npm
+cd proj-lite-web
+wasm-pack build \
+  --release \
   --target web \
-  ./target/wasm32-unknown-unknown/release/proj_lite_web.wasm
+  --out-dir ../npm \
+  --out-name proj_lite_web \
+  -- \
+  --target wasm32-unknown-emscripten
+cd ..
 ```
 
-This generates JS/TS bindings and `.wasm` under `npm/` (with metadata in `npm/package.json`).
+This generates JS/WASM package artifacts under `npm/`.
 
 ## Simple web demo
 
@@ -146,6 +149,5 @@ The page imports `../npm/proj_lite_web.js` and runs a single-point CRS transform
 
 Workflow: `.github/workflows/pages.yml`
 
-- Builds `proj-lite-web` for `wasm32-unknown-unknown`
-- Runs `wasm-bindgen` to generate the npm package files
+- Builds `proj-lite-web` for `wasm32-unknown-emscripten` using `wasm-pack`
 - Publishes `web/` + generated package files to GitHub Pages
