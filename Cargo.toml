@@ -1,0 +1,11 @@
+[package]
+name = "proj-lite"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+proj_sys = { package = "proj-lite-sys", path = "proj-lite-sys" }
+thiserror = "2.0"
+
+[workspace]
+members = ["proj-lite-sys"]
