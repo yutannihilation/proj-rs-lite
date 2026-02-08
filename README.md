@@ -114,7 +114,7 @@ The implementation and build strategy were informed by these repositories:
 - https://github.com/OSGeo/PROJ
   - PROJ source code and CMake/build configuration.
 - https://github.com/Spxg/sqlite-wasm-rs
-  - Emscripten/WASM-oriented build ideas and shim approach.
+  - Emscripten/WASM-oriented build ideas.
 
 ## Quick start
 
