@@ -12,8 +12,8 @@ Ongoing development is expected to include substantial hand-written changes.
 - Minimal high-level API:
   - `Proj::new(definition)`
   - `Proj::new_known_crs(from, to)`
-  - `transform((x, y))`
-  - `transform3((x, y, z))`
+  - `transform2(coord)`
+  - `transform3(coord)`
 - Bundled build only (no system `pkg-config` lookup path)
 - Optional/network features intentionally omitted
 
@@ -57,7 +57,7 @@ CI includes a dedicated Emscripten check job.
 use proj_lite::Proj;
 
 let tf = Proj::new_known_crs("EPSG:2230", "EPSG:26946")?;
-let out = tf.transform((4_760_096.421_921, 3_744_293.729_449))?;
+let out = tf.transform2((4_760_096.421_921, 3_744_293.729_449))?;
 println!("{out:?}");
 # Ok::<(), proj_lite::ProjError>(())
 ```
@@ -72,20 +72,37 @@ let tf = Proj::new(
      +step +proj=longlat +datum=WGS84 \
      +step +proj=merc +datum=WGS84"
 )?;
-let out = tf.transform((-122.4194, 37.7749))?;
+let out = tf.transform2((-122.4194, 37.7749))?;
 println!("{out:?}");
 # Ok::<(), proj_lite::ProjError>(())
 ```
 
-### 3D transform
+### `transform2` / `transform3` with WKT coordinates
 
 ```rust
 use proj_lite::Proj;
+use std::str::FromStr;
+use wkt::Wkt;
 
 let tf = Proj::new_known_crs("EPSG:4326", "EPSG:4979")?;
-let out = tf.transform3((-122.4194, 37.7749, 10.0))?;
-println!("{out:?}");
-# Ok::<(), proj_lite::ProjError>(())
+let point3d = match Wkt::<f64>::from_str("POINT Z (-122.4194 37.7749 10.0)")? {
+    Wkt::Point(p) => p.coord().unwrap().clone(),
+    _ => unreachable!(),
+};
+
+// transform2:
+// - accepts 2D or 3D+ CoordTrait input
+// - uses x/y and discards z (if present)
+let xy = tf.transform2(point3d.clone())?;
+println!("{xy:?}");
+
+// transform3:
+// - accepts 2D or 3D+ CoordTrait input
+// - if input is 2D, z is filled with 0.0
+let xyz_from_2d = tf.transform3((-122.4194, 37.7749))?;
+let xyz_from_3d = tf.transform3(point3d)?;
+println!("{xyz_from_2d:?} {xyz_from_3d:?}");
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ## Credits

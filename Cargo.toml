@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+geo-traits = { version = "0.3.0", default-features = false }
 proj_sys = { package = "proj-lite-sys", path = "proj-lite-sys" }
 thiserror = "2.0"
+
+[dev-dependencies]
+wkt = { version = "0.14.0", default-features = false }
 
 [workspace]
 members = ["proj-lite-sys"]
