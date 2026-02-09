@@ -85,10 +85,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if target == "wasm32-unknown-emscripten" {
-        // Keep in sync with PROJ's own Emscripten build recommendations.
-        let flags = "-fwasm-exceptions";
-        config.define("CMAKE_C_FLAGS", flags);
-        config.define("CMAKE_CXX_FLAGS", flags);
+        // Keep this aligned with the browser-oriented Emscripten setup used by
+        // this repository. These are applied to the C/C++ build of bundled PROJ.
+        //
+        // Note:
+        // - `-pthread` is intentionally opt-in because it requires browser
+        //   cross-origin isolation at runtime.
+        // - These flags do not guarantee removal of all host imports from the
+        //   final Rust/WASM artifact; Rust/Emscripten runtime can still require
+        //   host-provided imports.
+        let mut cflags = vec!["-fwasm-exceptions", "-fexceptions"];
+        if env::var("PROJ_LITE_EM_PTHREADS")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+        {
+            cflags.extend(["-pthread", "-matomics", "-mbulk-memory"]);
+        }
+        let cflags = cflags.join(" ");
+        config.define("CMAKE_C_FLAGS", &cflags);
+        config.define("CMAKE_CXX_FLAGS", &cflags);
+
+        // Prefer browser-style wasm over standalone WASI-like output for
+        // Emscripten-linked outputs produced in this cmake sub-build.
+        let em_link_flags = "-sSTANDALONE_WASM=0 -sFILESYSTEM=0";
+        config.define("CMAKE_EXE_LINKER_FLAGS", em_link_flags);
+        config.define("CMAKE_SHARED_LINKER_FLAGS", em_link_flags);
+        config.define("CMAKE_MODULE_LINKER_FLAGS", em_link_flags);
     }
 
     if cfg!(target_env = "msvc") {
