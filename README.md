@@ -43,8 +43,20 @@ To run in browser we provide:
   - `"wasi_snapshot_preview1"` -> `./npm/wasi_snapshot_preview1.js`
   - `"env"` -> `./npm/env.js`
 - shim modules:
-  - `web/wasi_snapshot_preview1.js`
-  - `web/env.js`
+- `web/wasi_snapshot_preview1.js`
+- `web/env.js`
+
+### Why Emscripten output still needed shims
+
+`wasm32-unknown-emscripten` does not always mean "no host imports". In this project, the
+Rust std + Emscripten libc/runtime + bundled PROJ/sqlite/C++ stack still produces wasm
+that imports runtime symbols (WASI-like and `env` syscalls).
+
+Browsers do not provide those modules natively, so we supply them with import maps + shim files.
+
+There is no single Emscripten flag in this repository that safely removes all manual bridging
+for the current dependency stack. Flags like `-sFILESYSTEM=0` reduce runtime surface area, but
+do not fully eliminate host import expectations here.
 
 And in runtime:
 
