@@ -81,11 +81,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Use Emscripten sysroot for PROJ C/C++ so libc++/pthread headers resolve cleanly.
         // We still build sqlite separately with local shims.
         let c_flags = format!(
-            "--target=wasm32-unknown-unknown --sysroot={} -fno-exceptions -pthread -matomics -mbulk-memory",
+            "--target=wasm32-unknown-unknown --sysroot={} -fno-exceptions -pthread -matomics -mbulk-memory -D_REENTRANT -D__EMSCRIPTEN_PTHREADS__=1 -D_LIBCPP_HAS_THREADS=1 -D_LIBCPP_HAS_THREAD_API_PTHREAD=1",
             sysroot.display()
         );
         let cxx_flags = format!(
-            "--target=wasm32-unknown-unknown --sysroot={} -fexceptions -pthread -matomics -mbulk-memory",
+            "--target=wasm32-unknown-unknown --sysroot={} -fexceptions -pthread -matomics -mbulk-memory -D_REENTRANT -D__EMSCRIPTEN_PTHREADS__=1 -D_LIBCPP_HAS_THREADS=1 -D_LIBCPP_HAS_THREAD_API_PTHREAD=1",
             sysroot.display()
         );
         config.define("CMAKE_C_FLAGS", c_flags);
