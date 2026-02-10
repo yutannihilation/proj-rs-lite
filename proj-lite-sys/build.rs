@@ -54,35 +54,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     config.define("EXE_SQLITE3", sqlite3_exe.display().to_string());
 
     if target == "wasm32-unknown-unknown" {
-        let (sqlite_include, sqlite_library) = build_sqlite_with_shim(&manifest_dir, &out_dir);
-        config.define("SQLite3_INCLUDE_DIR", sqlite_include.display().to_string());
-        config.define("SQLite3_LIBRARY", sqlite_library.display().to_string());
-
         let clang = env::var_os("CC_wasm32_unknown_unknown")
             .map(PathBuf::from)
             .or_else(|| env::var_os("CC_wasm32-unknown-unknown").map(PathBuf::from))
+            .or_else(find_emscripten_clang)
             .unwrap_or(find_required_tool(&["clang"])?);
         let clangxx = env::var_os("CXX_wasm32_unknown_unknown")
             .map(PathBuf::from)
             .or_else(|| env::var_os("CXX_wasm32-unknown-unknown").map(PathBuf::from))
+            .or_else(find_emscripten_clangxx)
             .unwrap_or(find_required_tool(&["clang++"])?);
-        let llvm_ar = find_required_tool(&["llvm-ar", "llvm-ar-18", "llvm-ar-17", "emar"])?;
-        let llvm_ranlib =
-            find_required_tool(&["llvm-ranlib", "llvm-ranlib-18", "llvm-ranlib-17", "emranlib"])?;
+        let (sqlite_include, sqlite_library) =
+            build_sqlite_with_shim(&manifest_dir, &out_dir, &clang);
+        config.define("SQLite3_INCLUDE_DIR", sqlite_include.display().to_string());
+        config.define("SQLite3_LIBRARY", sqlite_library.display().to_string());
+
+        let emar = find_required_tool(&["emar", "llvm-ar", "llvm-ar-18", "llvm-ar-17"])?;
+        let emranlib =
+            find_required_tool(&["emranlib", "llvm-ranlib", "llvm-ranlib-18", "llvm-ranlib-17"])?;
         config.define("CMAKE_C_COMPILER", clang.display().to_string());
         config.define("CMAKE_CXX_COMPILER", clangxx.display().to_string());
-        config.define("CMAKE_AR", llvm_ar.display().to_string());
-        config.define("CMAKE_RANLIB", llvm_ranlib.display().to_string());
+        config.define("CMAKE_AR", emar.display().to_string());
+        config.define("CMAKE_RANLIB", emranlib.display().to_string());
         config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
-        let shim_include = manifest_dir.join("shim").join("musl").join("include");
-        let shim_arch_include = manifest_dir.join("shim").join("musl").join("arch").join("generic");
-        let wasm_flags = format!(
-            "--target=wasm32-unknown-unknown -I{} -I{}",
-            shim_include.display(),
-            shim_arch_include.display()
+        let sysroot = find_emscripten_sysroot()
+            .ok_or_else(|| "failed to locate Emscripten sysroot (expected emcc/../cache/sysroot)")?;
+        // Use Emscripten sysroot for PROJ C/C++ so libc++/pthread headers resolve cleanly.
+        // We still build sqlite separately with local shims.
+        let c_flags = format!(
+            "--target=wasm32-unknown-unknown --sysroot={} -fno-exceptions",
+            sysroot.display()
         );
-        config.define("CMAKE_C_FLAGS", wasm_flags.clone());
-        config.define("CMAKE_CXX_FLAGS", wasm_flags);
+        let cxx_flags = format!(
+            "--target=wasm32-unknown-unknown --sysroot={} -fexceptions",
+            sysroot.display()
+        );
+        config.define("CMAKE_C_FLAGS", c_flags);
+        config.define("CMAKE_CXX_FLAGS", cxx_flags);
     } else {
         if let Ok(sqlite_include) = env::var("DEP_SQLITE3_INCLUDE") {
             config.define("SQLite3_INCLUDE_DIR", sqlite_include);
@@ -113,6 +121,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!("cargo:rustc-link-search=native={}", proj.join("lib").display());
 
+    if target == "wasm32-unknown-unknown" {
+        if let Some(lib_dir) = find_emscripten_lib_dir() {
+            println!("cargo:rustc-link-search=native={}", lib_dir.display());
+            println!("cargo:rustc-link-lib=static=c++");
+            println!("cargo:rustc-link-lib=static=c++abi");
+        }
+    }
+
     if target.contains("windows") {
         println!("cargo:rustc-link-lib=shell32");
         println!("cargo:rustc-link-lib=ole32");
@@ -140,7 +156,52 @@ fn find_required_tool(candidates: &[&str]) -> Result<PathBuf, io::Error> {
     ))
 }
 
-fn build_sqlite_with_shim(manifest_dir: &Path, out_dir: &Path) -> (PathBuf, PathBuf) {
+fn find_emscripten_sysroot() -> Option<PathBuf> {
+    let emcc = find_in_path("emcc")?;
+    let dir = emcc.parent()?; // .../upstream/emscripten
+    let candidate = dir.join("cache").join("sysroot");
+    if candidate.exists() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+fn find_emscripten_clang() -> Option<PathBuf> {
+    let emcc = find_in_path("emcc")?;
+    let emscripten_dir = emcc.parent()?;
+    let upstream_dir = emscripten_dir.parent()?;
+    let candidate = upstream_dir.join("bin").join("clang");
+    if candidate.exists() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+fn find_emscripten_clangxx() -> Option<PathBuf> {
+    let emcc = find_in_path("emcc")?;
+    let emscripten_dir = emcc.parent()?;
+    let upstream_dir = emscripten_dir.parent()?;
+    let candidate = upstream_dir.join("bin").join("clang++");
+    if candidate.exists() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+fn find_emscripten_lib_dir() -> Option<PathBuf> {
+    let sysroot = find_emscripten_sysroot()?;
+    let candidate = sysroot.join("lib").join("wasm32-emscripten");
+    if candidate.exists() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+fn build_sqlite_with_shim(manifest_dir: &Path, out_dir: &Path, c_compiler: &Path) -> (PathBuf, PathBuf) {
     const SQLITE_FEATURES: [&str; 23] = [
         "-DSQLITE_OS_OTHER",
         "-DSQLITE_USE_URI",
@@ -210,6 +271,7 @@ fn build_sqlite_with_shim(manifest_dir: &Path, out_dir: &Path) -> (PathBuf, Path
 
     let mut cc = cc::Build::new();
     cc.warnings(false)
+        .compiler(c_compiler)
         .flag("-Wno-macro-redefined")
         .include(&shim_dir)
         .include(shim_dir.join("musl/arch/generic"))

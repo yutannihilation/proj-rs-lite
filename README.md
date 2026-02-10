@@ -12,6 +12,48 @@ This repository is currently focused on `wasm32-unknown-unknown`.
 - The browser demo uses `wasm-bindgen` output (`npm/proj_lite_web.js` + `npm/proj_lite_web_bg.wasm`)
   and does not rely on Emscripten runtime shims.
 
+### Why this works without WASI shims
+
+`wasm32-unknown-unknown` has no default libc/sysroot. PROJ itself is C/C++, so the build uses two paths:
+
+- `proj-lite-sys/build.rs` compiles PROJ C/C++ with Emscripten's Clang + sysroot
+  (`--target=wasm32-unknown-unknown --sysroot=<emsdk>/upstream/emscripten/cache/sysroot`).
+- SQLite (used by PROJ's `proj.db` build step) is compiled from bundled amalgamation with local shims
+  (`proj-lite-sys/shim/` + `proj-lite-sys/sqlite3/`).
+
+This avoids importing `wasi_snapshot_preview1` in browser runtime and avoids JS-side WASI/env shim files.
+
+### Required build environment for wasm32-unknown-unknown
+
+- Emsdk installed and available in `PATH` (for `emcc`, `emar`, `emranlib`, Emscripten sysroot).
+- `sqlite3` CLI available in `PATH` (or set `SQLITE3_BIN`).
+- `wasm-bindgen-cli` for generating JS glue.
+
+Recommended target compiler env (used in CI too):
+
+```bash
+export CC_wasm32_unknown_unknown="$EMSDK/upstream/bin/clang"
+export CXX_wasm32_unknown_unknown="$EMSDK/upstream/bin/clang++"
+```
+
+### Troubleshooting
+
+- `warning: proj-lite-sys@... Compiler family detection failed ... detect_compiler_family.c`
+  - These warnings come from `cc-rs` probing the compiler and are expected in this setup.
+  - If the build continues and finishes, they can be ignored.
+
+- `unable to create target: wasm32-unknown-unknown` or host `clang` errors
+  - `CC_wasm32_unknown_unknown` / `CXX_wasm32_unknown_unknown` are not pointing to Emsdk clang.
+  - Set:
+    - `CC_wasm32_unknown_unknown=$EMSDK/upstream/bin/clang`
+    - `CXX_wasm32_unknown_unknown=$EMSDK/upstream/bin/clang++`
+
+- `sqlite3 not found in PATH`
+  - Install `sqlite3` or set `SQLITE3_BIN` to the sqlite3 executable path.
+
+- Linker error like `unable to find library -lstdc++`
+  - Ensure you are using current `proj-lite-sys` configuration (manual `link-cplusplus` mode + Emscripten libc++ link path from `build.rs`).
+
 ## Disclaimer
 
 The current codebase was initially generated with assistance from Codex.
@@ -142,6 +184,8 @@ cargo test
 ## Build npm package from Rust WASM
 
 ```bash
+export CC_wasm32_unknown_unknown="$EMSDK/upstream/bin/clang"
+export CXX_wasm32_unknown_unknown="$EMSDK/upstream/bin/clang++"
 cargo build --release --target wasm32-unknown-unknown -p proj-lite-web
 wasm-bindgen \
   --out-dir ./npm \
