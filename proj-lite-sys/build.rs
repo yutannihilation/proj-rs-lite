@@ -1,13 +1,17 @@
 use std::env;
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 
 const PROJ_VERSION: &str = "9.8.0";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=SQLITE3_BIN");
     println!("cargo:rerun-if-changed=vendor/proj-9.8.0/CMakeLists.txt");
+    println!("cargo:rerun-if-changed=shim");
+    println!("cargo:rerun-if-changed=sqlite3");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
+    let out_dir = PathBuf::from(env::var("OUT_DIR")?);
     let proj_src = manifest_dir
         .join("vendor")
         .join(format!("proj-{PROJ_VERSION}"));
@@ -15,20 +19,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !proj_src.exists() {
         return Err(format!(
-            "missing bundled PROJ source directory: {}. \
-run proj-lite-sys/vendor/update_proj_vendor.sh to generate it from the submodule.",
+            "missing bundled PROJ source directory: {}. run proj-lite-sys/vendor/update_proj_vendor.sh to generate it from the submodule.",
             proj_src.display()
         )
         .into());
     }
 
-    // IMPORTANT:
-    // This crate intentionally always builds PROJ from bundled source.
-    // We do not probe for a system PROJ installation.
     let mut config = cmake::Config::new(&proj_src);
-
-    // Build only the static library and disable extra tools/tests to keep
-    // the build minimal and deterministic.
     config.define("BUILD_SHARED_LIBS", "OFF");
     config.define("BUILD_TESTING", "OFF");
     config.define("BUILD_APPS", "OFF");
@@ -39,25 +36,12 @@ run proj-lite-sys/vendor/update_proj_vendor.sh to generate it from the submodule
     config.define("BUILD_PROJ", "OFF");
     config.define("BUILD_PROJINFO", "OFF");
     config.define("BUILD_PROJSYNC", "OFF");
-
-    // IMPORTANT:
-    // For proj-lite we intentionally omit optional runtime deps.
-    // - ENABLE_CURL=OFF disables network/grid-download path.
-    // - ENABLE_TIFF=OFF avoids TIFF grid dependency.
     config.define("ENABLE_CURL", "OFF");
     config.define("ENABLE_TIFF", "OFF");
     config.define("ENABLE_EMSCRIPTEN_FETCH", "OFF");
-
-    // IMPORTANT:
-    // Embed proj.db into the static library and use only embedded resources.
-    // This avoids external PROJ data lookup at runtime for core operations.
     config.define("EMBED_RESOURCE_FILES", "ON");
     config.define("USE_ONLY_EMBEDDED_RESOURCE_FILES", "ON");
 
-    // PROJ needs a sqlite3 CLI during build to generate proj.db.
-    // Selection order:
-    // 1) SQLITE3_BIN override
-    // 2) Platform default binary in PATH
     let sqlite3_exe = match env::var("SQLITE3_BIN") {
         Ok(val) => PathBuf::from(val),
         Err(_) if cfg!(windows) => find_in_path("sqlite3.exe").ok_or_else(|| {
@@ -69,51 +53,51 @@ run proj-lite-sys/vendor/update_proj_vendor.sh to generate it from the submodule
     };
     config.define("EXE_SQLITE3", sqlite3_exe.display().to_string());
 
-    // IMPORTANT:
-    // Prefer libsqlite3-sys bundled outputs when available so CMake links
-    // against the same sqlite build Cargo produced.
-    if let Ok(sqlite_include) = env::var("DEP_SQLITE3_INCLUDE") {
-        config.define("SQLite3_INCLUDE_DIR", sqlite_include);
-    }
-    if let Ok(sqlite_lib_dir) = env::var("DEP_SQLITE3_LIB_DIR") {
-        let lib_dir = PathBuf::from(sqlite_lib_dir);
-        let sqlite3_msvc = lib_dir.join("sqlite3.lib");
-        let sqlite3_gnu = lib_dir.join("libsqlite3.a");
-        let sqlite3_lib = if sqlite3_msvc.exists() {
-            sqlite3_msvc
-        } else {
-            sqlite3_gnu
-        };
-        config.define("SQLite3_LIBRARY", sqlite3_lib.display().to_string());
-    }
+    if target == "wasm32-unknown-unknown" {
+        let (sqlite_include, sqlite_library) = build_sqlite_with_shim(&manifest_dir, &out_dir);
+        config.define("SQLite3_INCLUDE_DIR", sqlite_include.display().to_string());
+        config.define("SQLite3_LIBRARY", sqlite_library.display().to_string());
 
-    if target == "wasm32-unknown-emscripten" {
-        // Keep this aligned with the browser-oriented Emscripten setup used by
-        // this repository. These are applied to the C/C++ build of bundled PROJ.
-        //
-        // Note:
-        // - `-pthread` is intentionally opt-in because it requires browser
-        //   cross-origin isolation at runtime.
-        // - These flags do not guarantee removal of all host imports from the
-        //   final Rust/WASM artifact; Rust/Emscripten runtime can still require
-        //   host-provided imports.
-        let mut cflags = vec!["-fwasm-exceptions", "-fexceptions"];
-        if env::var("PROJ_LITE_EM_PTHREADS")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-        {
-            cflags.extend(["-pthread", "-matomics", "-mbulk-memory"]);
+        let clang = env::var_os("CC_wasm32_unknown_unknown")
+            .map(PathBuf::from)
+            .or_else(|| env::var_os("CC_wasm32-unknown-unknown").map(PathBuf::from))
+            .unwrap_or(find_required_tool(&["clang"])?);
+        let clangxx = env::var_os("CXX_wasm32_unknown_unknown")
+            .map(PathBuf::from)
+            .or_else(|| env::var_os("CXX_wasm32-unknown-unknown").map(PathBuf::from))
+            .unwrap_or(find_required_tool(&["clang++"])?);
+        let llvm_ar = find_required_tool(&["llvm-ar", "llvm-ar-18", "llvm-ar-17", "emar"])?;
+        let llvm_ranlib =
+            find_required_tool(&["llvm-ranlib", "llvm-ranlib-18", "llvm-ranlib-17", "emranlib"])?;
+        config.define("CMAKE_C_COMPILER", clang.display().to_string());
+        config.define("CMAKE_CXX_COMPILER", clangxx.display().to_string());
+        config.define("CMAKE_AR", llvm_ar.display().to_string());
+        config.define("CMAKE_RANLIB", llvm_ranlib.display().to_string());
+        config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
+        let shim_include = manifest_dir.join("shim").join("musl").join("include");
+        let shim_arch_include = manifest_dir.join("shim").join("musl").join("arch").join("generic");
+        let wasm_flags = format!(
+            "--target=wasm32-unknown-unknown -I{} -I{}",
+            shim_include.display(),
+            shim_arch_include.display()
+        );
+        config.define("CMAKE_C_FLAGS", wasm_flags.clone());
+        config.define("CMAKE_CXX_FLAGS", wasm_flags);
+    } else {
+        if let Ok(sqlite_include) = env::var("DEP_SQLITE3_INCLUDE") {
+            config.define("SQLite3_INCLUDE_DIR", sqlite_include);
         }
-        let cflags = cflags.join(" ");
-        config.define("CMAKE_C_FLAGS", &cflags);
-        config.define("CMAKE_CXX_FLAGS", &cflags);
-
-        // Prefer browser-style wasm over standalone WASI-like output for
-        // Emscripten-linked outputs produced in this cmake sub-build.
-        let em_link_flags = "-sSTANDALONE_WASM=0 -sFILESYSTEM=0";
-        config.define("CMAKE_EXE_LINKER_FLAGS", em_link_flags);
-        config.define("CMAKE_SHARED_LINKER_FLAGS", em_link_flags);
-        config.define("CMAKE_MODULE_LINKER_FLAGS", em_link_flags);
+        if let Ok(sqlite_lib_dir) = env::var("DEP_SQLITE3_LIB_DIR") {
+            let lib_dir = PathBuf::from(sqlite_lib_dir);
+            let sqlite3_msvc = lib_dir.join("sqlite3.lib");
+            let sqlite3_gnu = lib_dir.join("libsqlite3.a");
+            let sqlite3_lib = if sqlite3_msvc.exists() {
+                sqlite3_msvc
+            } else {
+                sqlite3_gnu
+            };
+            config.define("SQLite3_LIBRARY", sqlite3_lib.display().to_string());
+        }
     }
 
     if cfg!(target_env = "msvc") {
@@ -127,22 +111,122 @@ run proj-lite-sys/vendor/update_proj_vendor.sh to generate it from the submodule
     } else {
         println!("cargo:rustc-link-lib=static=proj");
     }
-    println!(
-        "cargo:rustc-link-search=native={}",
-        proj.join("lib").display()
-    );
+    println!("cargo:rustc-link-search=native={}", proj.join("lib").display());
 
     if target.contains("windows") {
-        // Required by PROJ on Windows for known-folder and COM allocator APIs.
         println!("cargo:rustc-link-lib=shell32");
         println!("cargo:rustc-link-lib=ole32");
     }
 
     Ok(())
 }
+
 fn find_in_path(name: &str) -> Option<PathBuf> {
     let path = env::var_os("PATH")?;
     env::split_paths(&path)
         .map(|dir| dir.join(name))
         .find(|candidate| candidate.exists())
+}
+
+fn find_required_tool(candidates: &[&str]) -> Result<PathBuf, io::Error> {
+    for name in candidates {
+        if let Some(path) = find_in_path(name) {
+            return Ok(path);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::NotFound,
+        format!("required tool not found in PATH: {}", candidates.join(" or ")),
+    ))
+}
+
+fn build_sqlite_with_shim(manifest_dir: &Path, out_dir: &Path) -> (PathBuf, PathBuf) {
+    const SQLITE_FEATURES: [&str; 23] = [
+        "-DSQLITE_OS_OTHER",
+        "-DSQLITE_USE_URI",
+        "-DSQLITE_THREADSAFE=0",
+        "-DSQLITE_TEMP_STORE=2",
+        "-DSQLITE_DEFAULT_CACHE_SIZE=-16384",
+        "-DSQLITE_DEFAULT_PAGE_SIZE=8192",
+        "-DSQLITE_OMIT_DEPRECATED",
+        "-DSQLITE_OMIT_LOAD_EXTENSION",
+        "-DSQLITE_OMIT_SHARED_CACHE",
+        "-DSQLITE_ENABLE_UNLOCK_NOTIFY",
+        "-DSQLITE_ENABLE_API_ARMOR",
+        "-DSQLITE_ENABLE_BYTECODE_VTAB",
+        "-DSQLITE_ENABLE_DBPAGE_VTAB",
+        "-DSQLITE_ENABLE_DBSTAT_VTAB",
+        "-DSQLITE_ENABLE_FTS5",
+        "-DSQLITE_ENABLE_MATH_FUNCTIONS",
+        "-DSQLITE_ENABLE_OFFSET_SQL_FUNC",
+        "-DSQLITE_ENABLE_PREUPDATE_HOOK",
+        "-DSQLITE_ENABLE_RTREE",
+        "-DSQLITE_ENABLE_SESSION",
+        "-DSQLITE_ENABLE_STMTVTAB",
+        "-DSQLITE_ENABLE_UNKNOWN_SQL_FUNCTION",
+        "-DSQLITE_ENABLE_COLUMN_METADATA",
+    ];
+    const MUSL_SOURCES: [&str; 36] = [
+        "string/memchr.c",
+        "string/memrchr.c",
+        "string/stpcpy.c",
+        "string/stpncpy.c",
+        "string/strcat.c",
+        "string/strchr.c",
+        "string/strchrnul.c",
+        "string/strcmp.c",
+        "string/strcpy.c",
+        "string/strcspn.c",
+        "string/strlen.c",
+        "string/strncat.c",
+        "string/strncmp.c",
+        "string/strncpy.c",
+        "string/strrchr.c",
+        "string/strspn.c",
+        "stdlib/atoi.c",
+        "stdlib/bsearch.c",
+        "stdlib/qsort.c",
+        "stdlib/qsort_nr.c",
+        "stdlib/strtod.c",
+        "stdlib/strtol.c",
+        "math/__fpclassifyl.c",
+        "math/acosh.c",
+        "math/asinh.c",
+        "math/atanh.c",
+        "math/fmodl.c",
+        "math/scalbn.c",
+        "math/scalbnl.c",
+        "math/sqrt.c",
+        "math/trunc.c",
+        "errno/__errno_location.c",
+        "stdio/__toread.c",
+        "stdio/__uflow.c",
+        "internal/floatscan.c",
+        "internal/shgetc.c",
+    ];
+
+    let shim_dir = manifest_dir.join("shim");
+    let sqlite_dir = manifest_dir.join("sqlite3");
+
+    let mut cc = cc::Build::new();
+    cc.warnings(false)
+        .flag("-Wno-macro-redefined")
+        .include(&shim_dir)
+        .include(shim_dir.join("musl/arch/generic"))
+        .include(shim_dir.join("musl/include"))
+        .file(shim_dir.join("printf/printf.c"))
+        .file(sqlite_dir.join("sqlite3.c"))
+        .flag("-DPRINTF_ALIAS_STANDARD_FUNCTION_NAMES_HARD")
+        .flag("-include")
+        .flag(shim_dir.join("wasm-shim.h").display().to_string());
+
+    for src in MUSL_SOURCES {
+        cc.file(shim_dir.join("musl").join(src));
+    }
+    cc.flags(&SQLITE_FEATURES);
+    cc.compile("sqlite3shim");
+
+    let include = sqlite_dir;
+    let lib = out_dir.join("libsqlite3shim.a");
+    (include, lib)
 }

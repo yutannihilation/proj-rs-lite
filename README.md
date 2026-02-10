@@ -4,66 +4,13 @@ Minimal Rust bindings for PROJ focused on point transforms.
 
 ## WASM Notes (Current Setup)
 
-This project intentionally uses `wasm32-unknown-emscripten` for browser builds.
+This repository is currently focused on `wasm32-unknown-unknown`.
 
-- Why not `wasm32-unknown-unknown`:
-  - PROJ is C/C++ heavy.
-  - In this codebase, `wasm32-unknown-unknown` failed on C++ toolchain/linking paths (`link-cplusplus`/clang target compatibility).
-  - `wasm32-unknown-emscripten` is the practical target here.
-- Why `wasm32-unknown-emscripten`:
-  - It can compile and link the bundled PROJ + sqlite stack in this repository.
-  - It works with the current `proj-lite-sys` CMake build flow.
-
-### RUSTFLAGS used for web build
-
-Current working flags:
-
-```bash
-RUSTFLAGS="-C link-arg=--no-entry -C link-arg=-sSTANDALONE_WASM=0 -C link-arg=-sFILESYSTEM=0"
-```
-
-Meaning:
-
-- `--no-entry`: build reactor-style wasm (library module, not app entrypoint).
-- `-sSTANDALONE_WASM=0`: generate non-standalone wasm expected by JS host/runtime.
-- `-sFILESYSTEM=0`: disables Emscripten FS glue we do not need for this demo.
-
-These flags are now reflected in `.github/workflows/pages.yml`.
-
-### Browser gap we had to bridge
-
-`wasm32-unknown-emscripten` output imports modules/symbols that browsers do not provide by default:
-
-- module import `"wasi_snapshot_preview1"` (WASI symbols like `clock_time_get`, `fd_write`, etc.)
-- module import `"env"` (Emscripten syscall stubs like `__syscall_*`)
-
-To run in browser we provide:
-
-- import map in `web/index.html` mapping:
-  - `"wasi_snapshot_preview1"` -> `./npm/wasi_snapshot_preview1.js`
-  - `"env"` -> `./npm/env.js`
-- shim modules:
-- `web/wasi_snapshot_preview1.js`
-- `web/env.js`
-
-### Why Emscripten output still needed shims
-
-`wasm32-unknown-emscripten` does not always mean "no host imports". In this project, the
-Rust std + Emscripten libc/runtime + bundled PROJ/sqlite/C++ stack still produces wasm
-that imports runtime symbols (WASI-like and `env` syscalls).
-
-Browsers do not provide those modules natively, so we supply them with import maps + shim files.
-
-There is no single Emscripten flag in this repository that safely removes all manual bridging
-for the current dependency stack. Flags like `-sFILESYSTEM=0` reduce runtime surface area, but
-do not fully eliminate host import expectations here.
-
-And in runtime:
-
-- instantiate `proj_lite_web_bg.wasm` directly with those imports
-- call `_initialize()` before using exports
-
-Without `_initialize()`, PROJ initialization fails at runtime.
+- `proj-lite-sys` builds bundled PROJ from `proj-lite-sys/vendor/proj-9.8.0/`.
+- For `wasm32-unknown-unknown`, sqlite is compiled from the bundled amalgamation
+  with local shim sources under `proj-lite-sys/shim/` and `proj-lite-sys/sqlite3/`.
+- The browser demo uses `wasm-bindgen` output (`npm/proj_lite_web.js` + `npm/proj_lite_web_bg.wasm`)
+  and does not rely on Emscripten runtime shims.
 
 ## Disclaimer
 
@@ -116,9 +63,7 @@ PROJ generates `proj.db` at build time.
 
 Current supported WASM target:
 
-- `wasm32-unknown-emscripten`
-
-CI includes a dedicated Emscripten check job.
+- `wasm32-unknown-unknown` (for npm/web packaging via `proj-lite-web`)
 
 ## Examples
 
@@ -185,7 +130,7 @@ The implementation and build strategy were informed by these repositories:
 - https://github.com/OSGeo/PROJ
   - PROJ source code and CMake/build configuration.
 - https://github.com/Spxg/sqlite-wasm-rs
-  - Emscripten/WASM-oriented build ideas.
+  - SQLite/WASM build ideas and shim approach.
 
 ## Quick start
 
@@ -197,28 +142,25 @@ cargo test
 ## Build npm package from Rust WASM
 
 ```bash
-rm -rf npm
-cd proj-lite-web
-RUSTFLAGS="-C link-arg=--no-entry -C link-arg=-sSTANDALONE_WASM=0 -C link-arg=-sFILESYSTEM=0" wasm-pack build \
-  --release \
+cargo build --release --target wasm32-unknown-unknown -p proj-lite-web
+wasm-bindgen \
+  --out-dir ./npm \
+  --typescript \
   --target web \
-  --out-dir ../npm \
-  --out-name proj_lite_web \
-  -- \
-  --target wasm32-unknown-emscripten
-cd ..
+  ./target/wasm32-unknown-unknown/release/proj_lite_web.wasm
 ```
 
-This generates JS/WASM package artifacts under `npm/`.
+This generates JS/TS bindings and `.wasm` under `npm/` (with metadata in `npm/package.json`).
 
 ## Simple web demo
 
 After generating `npm/` artifacts, serve the repository root with any static server and open `web/index.html`.
-The page loads `./npm/proj_lite_web_bg.wasm` directly and runs a single-point CRS transform.
+The page imports `../npm/proj_lite_web.js` and runs a single-point CRS transform.
 
 ## GitHub Pages deployment
 
 Workflow: `.github/workflows/pages.yml`
 
-- Builds `proj-lite-web` for `wasm32-unknown-emscripten` using `wasm-pack`
+- Builds `proj-lite-web` for `wasm32-unknown-unknown`
+- Runs `wasm-bindgen` to generate the npm package files
 - Publishes `web/` + generated package files to GitHub Pages
