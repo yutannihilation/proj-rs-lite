@@ -24,10 +24,9 @@ if [[ -z "${ARCHIVE}" ]]; then
 fi
 
 ARCHIVE_BASENAME="$(basename "${ARCHIVE}")"
-EXTRACT_DIR="${SCRIPT_DIR}/${ARCHIVE_BASENAME%.tar.gz}"
+DEST_ARCHIVE="${SCRIPT_DIR}/${ARCHIVE_BASENAME}"
 
-echo "Extracting ${ARCHIVE_BASENAME} to ${SCRIPT_DIR} ..."
-rm -rf "${EXTRACT_DIR}"
-tar -xzf "${ARCHIVE}" -C "${SCRIPT_DIR}"
+echo "Updating ${DEST_ARCHIVE} ..."
+cp -f "${ARCHIVE}" "${DEST_ARCHIVE}"
 
-echo "Done: ${EXTRACT_DIR}"
+echo "Done: ${DEST_ARCHIVE}"

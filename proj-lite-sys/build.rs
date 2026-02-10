@@ -1,29 +1,28 @@
+use flate2::read::GzDecoder;
 use std::env;
+use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
+use tar::Archive;
 
 const PROJ_VERSION: &str = "9.8.0";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=SQLITE3_BIN");
-    println!("cargo:rerun-if-changed=vendor/proj-9.8.0/CMakeLists.txt");
+    println!("cargo:rerun-if-changed=vendor/proj-9.8.0.tar.gz");
     println!("cargo:rerun-if-changed=shim");
     println!("cargo:rerun-if-changed=sqlite3");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
-    let proj_src = manifest_dir
+    let tarball = manifest_dir
         .join("vendor")
-        .join(format!("proj-{PROJ_VERSION}"));
+        .join(format!("proj-{PROJ_VERSION}.tar.gz"));
+    let src_root = out_dir.join("PROJSRC").join("proj");
+    let proj_src = src_root.join(format!("proj-{PROJ_VERSION}"));
     let target = env::var("TARGET").unwrap_or_default();
 
-    if !proj_src.exists() {
-        return Err(format!(
-            "missing bundled PROJ source directory: {}. run proj-lite-sys/vendor/update_proj_vendor.sh to generate it from the submodule.",
-            proj_src.display()
-        )
-        .into());
-    }
+    unpack_tarball(&tarball, &src_root)?;
 
     let mut config = cmake::Config::new(&proj_src);
     config.define("BUILD_SHARED_LIBS", "OFF");
@@ -82,11 +81,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Use Emscripten sysroot for PROJ C/C++ so libc++/pthread headers resolve cleanly.
         // We still build sqlite separately with local shims.
         let c_flags = format!(
-            "--target=wasm32-unknown-unknown --sysroot={} -fno-exceptions",
+            "--target=wasm32-unknown-unknown --sysroot={} -fno-exceptions -pthread -matomics -mbulk-memory",
             sysroot.display()
         );
         let cxx_flags = format!(
-            "--target=wasm32-unknown-unknown --sysroot={} -fexceptions",
+            "--target=wasm32-unknown-unknown --sysroot={} -fexceptions -pthread -matomics -mbulk-memory",
             sysroot.display()
         );
         config.define("CMAKE_C_FLAGS", c_flags);
@@ -124,8 +123,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if target == "wasm32-unknown-unknown" {
         if let Some(lib_dir) = find_emscripten_lib_dir() {
             println!("cargo:rustc-link-search=native={}", lib_dir.display());
-            println!("cargo:rustc-link-lib=static=c++");
-            println!("cargo:rustc-link-lib=static=c++abi");
+            println!("cargo:rustc-link-lib=static=c++-mt");
+            println!("cargo:rustc-link-lib=static=c++abi-mt");
         }
     }
 
@@ -142,6 +141,25 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
     env::split_paths(&path)
         .map(|dir| dir.join(name))
         .find(|candidate| candidate.exists())
+}
+
+fn unpack_tarball(tarball: &Path, dst: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if !tarball.exists() {
+        return Err(format!(
+            "missing bundled PROJ tarball: {}. run proj-lite-sys/vendor/update_proj_vendor.sh",
+            tarball.display()
+        )
+        .into());
+    }
+    if dst.exists() {
+        std::fs::remove_dir_all(dst)?;
+    }
+    std::fs::create_dir_all(dst)?;
+    let tar_gz = File::open(tarball)?;
+    let tar = GzDecoder::new(tar_gz);
+    let mut archive = Archive::new(tar);
+    archive.unpack(dst)?;
+    Ok(())
 }
 
 fn find_required_tool(candidates: &[&str]) -> Result<PathBuf, io::Error> {

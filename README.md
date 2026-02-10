@@ -6,7 +6,7 @@ Minimal Rust bindings for PROJ focused on point transforms.
 
 This repository is currently focused on `wasm32-unknown-unknown`.
 
-- `proj-lite-sys` builds bundled PROJ from `proj-lite-sys/vendor/proj-9.8.0/`.
+- `proj-lite-sys` builds bundled PROJ from `proj-lite-sys/vendor/proj-9.8.0.tar.gz`.
 - For `wasm32-unknown-unknown`, sqlite is compiled from the bundled amalgamation
   with local shim sources under `proj-lite-sys/shim/` and `proj-lite-sys/sqlite3/`.
 - The browser demo uses `wasm-bindgen` output (`npm/proj_lite_web.js` + `npm/proj_lite_web_bg.wasm`)
@@ -71,7 +71,7 @@ Ongoing development is expected to include substantial hand-written changes.
 
 ## Bundled dependencies
 
-- PROJ source is always built from `proj-lite-sys/vendor/proj-9.8.0/` (official `dist` archive content).
+- PROJ source is always built from `proj-lite-sys/vendor/proj-9.8.0.tar.gz` (official `dist` archive content).
 - `libsqlite3-sys` is used with `bundled` enabled.
 - `libcurl` and `libtiff` are disabled in the PROJ CMake build.
 
@@ -88,7 +88,7 @@ This repository vendors PROJ source distribution content from OSGeo/PROJ.
 - Submodule checkout: `proj-lite-sys/vendor/proj`
 - Build + extract official source distribution:
   - `proj-lite-sys/vendor/update_proj_vendor.sh`
-- The crate build consumes the extracted `proj-lite-sys/vendor/proj-<version>/` directory.
+- The crate build extracts `proj-lite-sys/vendor/proj-<version>.tar.gz` into `OUT_DIR` during build.
 - `proj-lite-sys/vendor/proj/**` is excluded from crate packaging to avoid shipping the entire git repository.
 
 ## sqlite3 for proj.db generation
