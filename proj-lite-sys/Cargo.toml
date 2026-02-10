@@ -3,6 +3,9 @@ name = "proj-lite-sys"
 version = "0.1.0"
 edition = "2024"
 links = "proj"
+exclude = [
+  "vendor/proj/**",
+]
 
 [dependencies]
 link-cplusplus = "1.0"
@@ -12,5 +15,3 @@ libsqlite3-sys = { version = "0.35", features = ["bundled"] }
 
 [build-dependencies]
 cmake = "0.1"
-flate2 = "1.1"
-tar = "0.4"

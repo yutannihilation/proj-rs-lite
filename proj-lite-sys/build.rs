@@ -1,23 +1,26 @@
-use flate2::read::GzDecoder;
 use std::env;
-use std::fs::File;
-use std::path::{Path, PathBuf};
-use tar::Archive;
+use std::path::PathBuf;
 
-const PROJ_VERSION: &str = "9.7.1";
+const PROJ_VERSION: &str = "9.8.0";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=SQLITE3_BIN");
-    println!("cargo:rerun-if-changed=vendor/proj-9.7.1.tar.gz");
+    println!("cargo:rerun-if-changed=vendor/proj-9.8.0/CMakeLists.txt");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
-    let tarball = manifest_dir.join("vendor").join("proj-9.7.1.tar.gz");
-    let out_dir = PathBuf::from(env::var("OUT_DIR")?);
-    let src_root = out_dir.join("PROJSRC").join("proj");
-    let proj_src = src_root.join(format!("proj-{PROJ_VERSION}"));
+    let proj_src = manifest_dir
+        .join("vendor")
+        .join(format!("proj-{PROJ_VERSION}"));
     let target = env::var("TARGET").unwrap_or_default();
 
-    unpack_tarball(&tarball, &src_root)?;
+    if !proj_src.exists() {
+        return Err(format!(
+            "missing bundled PROJ source directory: {}. \
+run proj-lite-sys/vendor/update_proj_vendor.sh to generate it from the submodule.",
+            proj_src.display()
+        )
+        .into());
+    }
 
     // IMPORTANT:
     // This crate intentionally always builds PROJ from bundled source.
@@ -137,21 +140,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
-fn unpack_tarball(tarball: &Path, dst: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    if dst.exists() {
-        return Ok(());
-    }
-
-    // Extract once into OUT_DIR; repeated builds reuse extracted sources.
-    std::fs::create_dir_all(dst)?;
-    let tar_gz = File::open(tarball)?;
-    let tar = GzDecoder::new(tar_gz);
-    let mut archive = Archive::new(tar);
-    archive.unpack(dst)?;
-    Ok(())
-}
-
 fn find_in_path(name: &str) -> Option<PathBuf> {
     let path = env::var_os("PATH")?;
     env::split_paths(&path)

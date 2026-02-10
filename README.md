@@ -82,17 +82,25 @@ Ongoing development is expected to include substantial hand-written changes.
 
 ## Bundled dependencies
 
-- PROJ source is always built from `proj-lite-sys/vendor/proj-9.7.1.tar.gz`.
+- PROJ source is always built from `proj-lite-sys/vendor/proj-9.8.0/` (official `dist` archive content).
 - `libsqlite3-sys` is used with `bundled` enabled.
 - `libcurl` and `libtiff` are disabled in the PROJ CMake build.
 
 ### Bundled PROJ source license
 
-This repository vendors `proj-9.7.1.tar.gz` from OSGeo/PROJ.
+This repository vendors PROJ source distribution content from OSGeo/PROJ.
 
 - The bundled PROJ source is licensed under the PROJ upstream license.
-- See the bundled source `COPYING` file in the PROJ archive for the exact terms.
+- See the bundled source `COPYING` file for the exact terms.
 - Keep that license text when redistributing builds that include bundled PROJ.
+
+### Updating bundled PROJ source
+
+- Submodule checkout: `proj-lite-sys/vendor/proj`
+- Build + extract official source distribution:
+  - `proj-lite-sys/vendor/update_proj_vendor.sh`
+- The crate build consumes the extracted `proj-lite-sys/vendor/proj-<version>/` directory.
+- `proj-lite-sys/vendor/proj/**` is excluded from crate packaging to avoid shipping the entire git repository.
 
 ## sqlite3 for proj.db generation
 
