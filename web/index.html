@@ -40,6 +40,14 @@
     <button id="run">Transform</button>
     <pre id="result">Ready.</pre>
 
+    <script type="importmap">
+      {
+        "imports": {
+          "wasi_snapshot_preview1": "./npm/wasi_snapshot_preview1.js",
+          "env": "./npm/env.js"
+        }
+      }
+    </script>
     <script type="module" src="./main.js"></script>
   </body>
   </html>

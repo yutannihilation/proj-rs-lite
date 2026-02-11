@@ -4,37 +4,33 @@ Minimal Rust bindings for PROJ focused on point transforms.
 
 ## WASM Notes (Current Setup)
 
-This repository is currently focused on `wasm32-unknown-unknown`.
+This repository is currently focused on `wasm32-unknown-emscripten`.
 
 - `proj-lite-sys` builds bundled PROJ from `proj-lite-sys/vendor/proj-9.8.0.tar.gz`.
-- For `wasm32-unknown-unknown`, sqlite is compiled from the bundled amalgamation
-  with local shim sources under `proj-lite-sys/shim/` and `proj-lite-sys/sqlite3/`.
-- The browser demo uses `wasm-bindgen` output (`npm/proj_lite_web.js` + `npm/proj_lite_web_bg.wasm`)
-  and does not rely on Emscripten runtime shims.
+- The browser demo uses `wasm-bindgen` output generated from the emscripten target.
+- CI and Pages build with Emsdk and `wasm32-unknown-emscripten`.
 
-### Why this works without WASI shims
+### Postmortem: `wasm32-unknown-unknown` attempt
 
-`wasm32-unknown-unknown` has no default libc/sysroot. PROJ itself is C/C++, so the build uses two paths:
+We attempted to migrate to `wasm32-unknown-unknown` and reverted.
 
-- `proj-lite-sys/build.rs` compiles PROJ C/C++ with Emscripten's Clang + sysroot
-  (`--target=wasm32-unknown-unknown --sysroot=<emsdk>/upstream/emscripten/cache/sysroot`).
-- SQLite (used by PROJ's `proj.db` build step) is compiled from bundled amalgamation with local shims
-  (`proj-lite-sys/shim/` + `proj-lite-sys/sqlite3/`).
+Main failure points:
 
-This avoids importing `wasi_snapshot_preview1` in browser runtime and avoids JS-side WASI/env shim files.
+- Browser-side module resolution became brittle (`env` imports were emitted as bare specifiers).
+- PROJ + C++ runtime requirements pulled in a wide host import surface (`env` symbols), which required large custom shims.
+- CI frequently failed on libc++/threading integration (`No thread API` and related C++ threading symbol errors).
+- The setup became harder to keep deterministic across local + CI + Pages than the emscripten flow.
 
-### Required build environment for wasm32-unknown-unknown
+Decision:
+
+- Keep `wasm32-unknown-emscripten` as the supported web target for now.
+- Revisit `wasm32-unknown-unknown` only after upstream/toolchain constraints become simpler.
+
+### Required build environment for wasm32-unknown-emscripten
 
 - Emsdk installed and available in `PATH` (for `emcc`, `emar`, `emranlib`, Emscripten sysroot).
 - `sqlite3` CLI available in `PATH` (or set `SQLITE3_BIN`).
 - `wasm-bindgen-cli` for generating JS glue.
-
-Recommended target compiler env (used in CI too):
-
-```bash
-export CC_wasm32_unknown_unknown="$EMSDK/upstream/bin/clang"
-export CXX_wasm32_unknown_unknown="$EMSDK/upstream/bin/clang++"
-```
 
 ### Troubleshooting
 
@@ -42,17 +38,11 @@ export CXX_wasm32_unknown_unknown="$EMSDK/upstream/bin/clang++"
   - These warnings come from `cc-rs` probing the compiler and are expected in this setup.
   - If the build continues and finishes, they can be ignored.
 
-- `unable to create target: wasm32-unknown-unknown` or host `clang` errors
-  - `CC_wasm32_unknown_unknown` / `CXX_wasm32_unknown_unknown` are not pointing to Emsdk clang.
-  - Set:
-    - `CC_wasm32_unknown_unknown=$EMSDK/upstream/bin/clang`
-    - `CXX_wasm32_unknown_unknown=$EMSDK/upstream/bin/clang++`
+- `cannot use 'try' with exceptions disabled` during PROJ C++ compile
+  - Ensure `proj-lite-sys/build.rs` keeps emscripten C/C++ flags with `-fexceptions`.
 
 - `sqlite3 not found in PATH`
   - Install `sqlite3` or set `SQLITE3_BIN` to the sqlite3 executable path.
-
-- Linker error like `unable to find library -lstdc++`
-  - Ensure you are using current `proj-lite-sys` configuration (manual `link-cplusplus` mode + Emscripten libc++ link path from `build.rs`).
 
 ## Disclaimer
 
@@ -105,7 +95,7 @@ PROJ generates `proj.db` at build time.
 
 Current supported WASM target:
 
-- `wasm32-unknown-unknown` (for npm/web packaging via `proj-lite-web`)
+- `wasm32-unknown-emscripten` (for npm/web packaging via `proj-lite-web`)
 
 ## Examples
 
@@ -172,7 +162,7 @@ The implementation and build strategy were informed by these repositories:
 - https://github.com/OSGeo/PROJ
   - PROJ source code and CMake/build configuration.
 - https://github.com/Spxg/sqlite-wasm-rs
-  - SQLite/WASM build ideas and shim approach.
+  - SQLite/WASM build ideas.
 
 ## Quick start
 
@@ -184,14 +174,12 @@ cargo test
 ## Build npm package from Rust WASM
 
 ```bash
-export CC_wasm32_unknown_unknown="$EMSDK/upstream/bin/clang"
-export CXX_wasm32_unknown_unknown="$EMSDK/upstream/bin/clang++"
-cargo build --release --target wasm32-unknown-unknown -p proj-lite-web
+cargo build --release --target wasm32-unknown-emscripten -p proj-lite-web
 wasm-bindgen \
   --out-dir ./npm \
   --typescript \
   --target web \
-  ./target/wasm32-unknown-unknown/release/proj_lite_web.wasm
+  ./target/wasm32-unknown-emscripten/release/proj_lite_web.wasm
 ```
 
 This generates JS/TS bindings and `.wasm` under `npm/` (with metadata in `npm/package.json`).
@@ -205,6 +193,6 @@ The page imports `../npm/proj_lite_web.js` and runs a single-point CRS transform
 
 Workflow: `.github/workflows/pages.yml`
 
-- Builds `proj-lite-web` for `wasm32-unknown-unknown`
+- Builds `proj-lite-web` for `wasm32-unknown-emscripten`
 - Runs `wasm-bindgen` to generate the npm package files
 - Publishes `web/` + generated package files to GitHub Pages

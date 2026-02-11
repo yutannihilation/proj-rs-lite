@@ -1,7 +1,6 @@
 use flate2::read::GzDecoder;
 use std::env;
 use std::fs::File;
-use std::io;
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
@@ -10,8 +9,6 @@ const PROJ_VERSION: &str = "9.8.0";
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=SQLITE3_BIN");
     println!("cargo:rerun-if-changed=vendor/proj-9.8.0.tar.gz");
-    println!("cargo:rerun-if-changed=shim");
-    println!("cargo:rerun-if-changed=sqlite3");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
@@ -52,64 +49,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     config.define("EXE_SQLITE3", sqlite3_exe.display().to_string());
 
-    if target == "wasm32-unknown-unknown" {
-        let clang = env::var_os("CC_wasm32_unknown_unknown")
-            .map(PathBuf::from)
-            .or_else(|| env::var_os("CC_wasm32-unknown-unknown").map(PathBuf::from))
-            .or_else(find_emscripten_clang)
-            .unwrap_or(find_required_tool(&["clang"])?);
-        let clangxx = env::var_os("CXX_wasm32_unknown_unknown")
-            .map(PathBuf::from)
-            .or_else(|| env::var_os("CXX_wasm32-unknown-unknown").map(PathBuf::from))
-            .or_else(find_emscripten_clangxx)
-            .unwrap_or(find_required_tool(&["clang++"])?);
-        let (sqlite_include, sqlite_library) =
-            build_sqlite_with_shim(&manifest_dir, &out_dir, &clang);
-        config.define("SQLite3_INCLUDE_DIR", sqlite_include.display().to_string());
-        config.define("SQLite3_LIBRARY", sqlite_library.display().to_string());
+    if let Ok(sqlite_include) = env::var("DEP_SQLITE3_INCLUDE") {
+        config.define("SQLite3_INCLUDE_DIR", sqlite_include);
+    }
+    if let Ok(sqlite_lib_dir) = env::var("DEP_SQLITE3_LIB_DIR") {
+        let lib_dir = PathBuf::from(sqlite_lib_dir);
+        let sqlite3_msvc = lib_dir.join("sqlite3.lib");
+        let sqlite3_gnu = lib_dir.join("libsqlite3.a");
+        let sqlite3_lib = if sqlite3_msvc.exists() {
+            sqlite3_msvc
+        } else {
+            sqlite3_gnu
+        };
+        config.define("SQLite3_LIBRARY", sqlite3_lib.display().to_string());
+    }
 
-        let emar = find_required_tool(&["emar", "llvm-ar", "llvm-ar-18", "llvm-ar-17"])?;
-        let emranlib = find_required_tool(&[
-            "emranlib",
-            "llvm-ranlib",
-            "llvm-ranlib-18",
-            "llvm-ranlib-17",
-        ])?;
-        config.define("CMAKE_C_COMPILER", clang.display().to_string());
-        config.define("CMAKE_CXX_COMPILER", clangxx.display().to_string());
-        config.define("CMAKE_AR", emar.display().to_string());
-        config.define("CMAKE_RANLIB", emranlib.display().to_string());
-        config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
-        let sysroot = find_emscripten_sysroot().ok_or_else(
-            || "failed to locate Emscripten sysroot (expected emcc/../cache/sysroot)",
-        )?;
-        // Use Emscripten sysroot for PROJ C/C++ so libc++/pthread headers resolve cleanly.
-        // We still build sqlite separately with local shims.
-        let c_flags = format!(
-            "--target=wasm32-unknown-unknown --sysroot={} -fno-exceptions -pthread -matomics -mbulk-memory -D_REENTRANT -D__EMSCRIPTEN_PTHREADS__=1 -D_LIBCPP_HAS_THREADS=1 -D_LIBCPP_HAS_THREAD_API_PTHREAD=1",
-            sysroot.display()
-        );
-        let cxx_flags = format!(
-            "--target=wasm32-unknown-unknown --sysroot={} -fexceptions -pthread -matomics -mbulk-memory -D_REENTRANT -D__EMSCRIPTEN_PTHREADS__=1 -D_LIBCPP_HAS_THREADS=1 -D_LIBCPP_HAS_THREAD_API_PTHREAD=1",
-            sysroot.display()
-        );
-        config.define("CMAKE_C_FLAGS", c_flags);
-        config.define("CMAKE_CXX_FLAGS", cxx_flags);
-    } else {
-        if let Ok(sqlite_include) = env::var("DEP_SQLITE3_INCLUDE") {
-            config.define("SQLite3_INCLUDE_DIR", sqlite_include);
-        }
-        if let Ok(sqlite_lib_dir) = env::var("DEP_SQLITE3_LIB_DIR") {
-            let lib_dir = PathBuf::from(sqlite_lib_dir);
-            let sqlite3_msvc = lib_dir.join("sqlite3.lib");
-            let sqlite3_gnu = lib_dir.join("libsqlite3.a");
-            let sqlite3_lib = if sqlite3_msvc.exists() {
-                sqlite3_msvc
-            } else {
-                sqlite3_gnu
-            };
-            config.define("SQLite3_LIBRARY", sqlite3_lib.display().to_string());
-        }
+    if target == "wasm32-unknown-emscripten" {
+        // Match Rust's wasm32-unknown-emscripten EH mode to avoid mixed JS EH/wasm EH objects.
+        let flags = "-pthread -matomics -mbulk-memory -fwasm-exceptions";
+        config.define("CMAKE_C_FLAGS", flags);
+        config.define("CMAKE_CXX_FLAGS", flags);
     }
 
     if cfg!(target_env = "msvc") {
@@ -128,13 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         proj.join("lib").display()
     );
 
-    if target == "wasm32-unknown-unknown" {
-        if let Some(lib_dir) = find_emscripten_lib_dir() {
-            println!("cargo:rustc-link-search=native={}", lib_dir.display());
-            println!("cargo:rustc-link-lib=static=c++-mt");
-            println!("cargo:rustc-link-lib=static=c++abi-mt");
-        }
-    } else if target.contains("apple-darwin") {
+    if target.contains("apple-darwin") {
         println!("cargo:rustc-link-lib=c++");
     } else if target.contains("linux") {
         println!("cargo:rustc-link-lib=stdc++");
@@ -172,160 +125,4 @@ fn unpack_tarball(tarball: &Path, dst: &Path) -> Result<(), Box<dyn std::error::
     let mut archive = Archive::new(tar);
     archive.unpack(dst)?;
     Ok(())
-}
-
-fn find_required_tool(candidates: &[&str]) -> Result<PathBuf, io::Error> {
-    for name in candidates {
-        if let Some(path) = find_in_path(name) {
-            return Ok(path);
-        }
-    }
-    Err(io::Error::new(
-        io::ErrorKind::NotFound,
-        format!(
-            "required tool not found in PATH: {}",
-            candidates.join(" or ")
-        ),
-    ))
-}
-
-fn find_emscripten_sysroot() -> Option<PathBuf> {
-    let emcc = find_in_path("emcc")?;
-    let dir = emcc.parent()?; // .../upstream/emscripten
-    let candidate = dir.join("cache").join("sysroot");
-    if candidate.exists() {
-        Some(candidate)
-    } else {
-        None
-    }
-}
-
-fn find_emscripten_clang() -> Option<PathBuf> {
-    let emcc = find_in_path("emcc")?;
-    let emscripten_dir = emcc.parent()?;
-    let upstream_dir = emscripten_dir.parent()?;
-    let candidate = upstream_dir.join("bin").join("clang");
-    if candidate.exists() {
-        Some(candidate)
-    } else {
-        None
-    }
-}
-
-fn find_emscripten_clangxx() -> Option<PathBuf> {
-    let emcc = find_in_path("emcc")?;
-    let emscripten_dir = emcc.parent()?;
-    let upstream_dir = emscripten_dir.parent()?;
-    let candidate = upstream_dir.join("bin").join("clang++");
-    if candidate.exists() {
-        Some(candidate)
-    } else {
-        None
-    }
-}
-
-fn find_emscripten_lib_dir() -> Option<PathBuf> {
-    let sysroot = find_emscripten_sysroot()?;
-    let candidate = sysroot.join("lib").join("wasm32-emscripten");
-    if candidate.exists() {
-        Some(candidate)
-    } else {
-        None
-    }
-}
-
-fn build_sqlite_with_shim(
-    manifest_dir: &Path,
-    out_dir: &Path,
-    c_compiler: &Path,
-) -> (PathBuf, PathBuf) {
-    const SQLITE_FEATURES: [&str; 23] = [
-        "-DSQLITE_OS_OTHER",
-        "-DSQLITE_USE_URI",
-        "-DSQLITE_THREADSAFE=0",
-        "-DSQLITE_TEMP_STORE=2",
-        "-DSQLITE_DEFAULT_CACHE_SIZE=-16384",
-        "-DSQLITE_DEFAULT_PAGE_SIZE=8192",
-        "-DSQLITE_OMIT_DEPRECATED",
-        "-DSQLITE_OMIT_LOAD_EXTENSION",
-        "-DSQLITE_OMIT_SHARED_CACHE",
-        "-DSQLITE_ENABLE_UNLOCK_NOTIFY",
-        "-DSQLITE_ENABLE_API_ARMOR",
-        "-DSQLITE_ENABLE_BYTECODE_VTAB",
-        "-DSQLITE_ENABLE_DBPAGE_VTAB",
-        "-DSQLITE_ENABLE_DBSTAT_VTAB",
-        "-DSQLITE_ENABLE_FTS5",
-        "-DSQLITE_ENABLE_MATH_FUNCTIONS",
-        "-DSQLITE_ENABLE_OFFSET_SQL_FUNC",
-        "-DSQLITE_ENABLE_PREUPDATE_HOOK",
-        "-DSQLITE_ENABLE_RTREE",
-        "-DSQLITE_ENABLE_SESSION",
-        "-DSQLITE_ENABLE_STMTVTAB",
-        "-DSQLITE_ENABLE_UNKNOWN_SQL_FUNCTION",
-        "-DSQLITE_ENABLE_COLUMN_METADATA",
-    ];
-    const MUSL_SOURCES: [&str; 36] = [
-        "string/memchr.c",
-        "string/memrchr.c",
-        "string/stpcpy.c",
-        "string/stpncpy.c",
-        "string/strcat.c",
-        "string/strchr.c",
-        "string/strchrnul.c",
-        "string/strcmp.c",
-        "string/strcpy.c",
-        "string/strcspn.c",
-        "string/strlen.c",
-        "string/strncat.c",
-        "string/strncmp.c",
-        "string/strncpy.c",
-        "string/strrchr.c",
-        "string/strspn.c",
-        "stdlib/atoi.c",
-        "stdlib/bsearch.c",
-        "stdlib/qsort.c",
-        "stdlib/qsort_nr.c",
-        "stdlib/strtod.c",
-        "stdlib/strtol.c",
-        "math/__fpclassifyl.c",
-        "math/acosh.c",
-        "math/asinh.c",
-        "math/atanh.c",
-        "math/fmodl.c",
-        "math/scalbn.c",
-        "math/scalbnl.c",
-        "math/sqrt.c",
-        "math/trunc.c",
-        "errno/__errno_location.c",
-        "stdio/__toread.c",
-        "stdio/__uflow.c",
-        "internal/floatscan.c",
-        "internal/shgetc.c",
-    ];
-
-    let shim_dir = manifest_dir.join("shim");
-    let sqlite_dir = manifest_dir.join("sqlite3");
-
-    let mut cc = cc::Build::new();
-    cc.warnings(false)
-        .compiler(c_compiler)
-        .flag("-Wno-macro-redefined")
-        .include(&shim_dir)
-        .include(shim_dir.join("musl/arch/generic"))
-        .include(shim_dir.join("musl/include"))
-        .file(shim_dir.join("printf/printf.c"))
-        .file(sqlite_dir.join("sqlite3.c"))
-        .flag("-DPRINTF_ALIAS_STANDARD_FUNCTION_NAMES_HARD")
-        .flag("-include")
-        .flag(shim_dir.join("wasm-shim.h").display().to_string());
-
-    for src in MUSL_SOURCES {
-        cc.file(shim_dir.join("musl").join(src));
-    }
-    cc.flags(&SQLITE_FEATURES);
-    cc.compile("sqlite3shim");
-
-    let include = sqlite_dir;
-    let lib = out_dir.join("libsqlite3shim.a");
-    (include, lib)
 }
