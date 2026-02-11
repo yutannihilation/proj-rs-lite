@@ -37,8 +37,8 @@ jobs:
       - name: Cargo test
         run: cargo test
 
-  wasm-emscripten:
-    name: WASM (wasm32-unknown-emscripten)
+  wasm-unknown:
+    name: WASM (wasm32-unknown-unknown)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -46,15 +46,23 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-emscripten
+          targets: wasm32-unknown-unknown
 
-      - name: Setup Emscripten
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sqlite3
+
+      - name: Setup Emsdk
         uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 3.1.73
+          version: 4.0.8
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Cargo check (emscripten)
-        run: cargo check --target wasm32-unknown-emscripten
+      - name: Cargo check (wasm32-unknown-unknown)
+        env:
+          CC_wasm32_unknown_unknown: ${{ env.EMSDK }}/upstream/bin/clang
+          CXX_wasm32_unknown_unknown: ${{ env.EMSDK }}/upstream/bin/clang++
+        run: cargo check --target wasm32-unknown-unknown

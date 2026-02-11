@@ -66,7 +66,6 @@ jobs:
           cp web/index.html site/index.html
           cp web/main.js site/main.js
           cp npm/proj_lite_web.js site/npm/proj_lite_web.js
-          cp npm/proj_lite_web_bg.js site/npm/proj_lite_web_bg.js
           cp npm/proj_lite_web_bg.wasm site/npm/proj_lite_web_bg.wasm
 
       - name: Setup Pages
