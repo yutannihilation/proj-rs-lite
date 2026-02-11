@@ -134,6 +134,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("cargo:rustc-link-lib=static=c++-mt");
             println!("cargo:rustc-link-lib=static=c++abi-mt");
         }
+    } else if target.contains("apple-darwin") {
+        println!("cargo:rustc-link-lib=c++");
+    } else if target.contains("linux") {
+        println!("cargo:rustc-link-lib=stdc++");
     }
 
     if target.contains("windows") {
