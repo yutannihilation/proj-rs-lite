@@ -151,6 +151,10 @@ Browsers do not provide these, so we map them via import map and local shim modu
   - Copies `web/index.html`, `web/main.js`, and shim files into `site/npm`
   - Copies generated wasm/js artifacts
 
+Keep CI and Pages on the same Emsdk version (currently `5.0.0`).
+Version skew can trigger linker/post-link incompatibilities such as:
+`Unknown option '--enable-bulk-memory-opt'` from `wasm-opt`.
+
 ## Common failure signatures
 
 - `Uncaught TypeError: Failed to resolve module specifier "env"`
