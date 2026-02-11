@@ -69,15 +69,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.define("SQLite3_LIBRARY", sqlite_library.display().to_string());
 
         let emar = find_required_tool(&["emar", "llvm-ar", "llvm-ar-18", "llvm-ar-17"])?;
-        let emranlib =
-            find_required_tool(&["emranlib", "llvm-ranlib", "llvm-ranlib-18", "llvm-ranlib-17"])?;
+        let emranlib = find_required_tool(&[
+            "emranlib",
+            "llvm-ranlib",
+            "llvm-ranlib-18",
+            "llvm-ranlib-17",
+        ])?;
         config.define("CMAKE_C_COMPILER", clang.display().to_string());
         config.define("CMAKE_CXX_COMPILER", clangxx.display().to_string());
         config.define("CMAKE_AR", emar.display().to_string());
         config.define("CMAKE_RANLIB", emranlib.display().to_string());
         config.define("CMAKE_TRY_COMPILE_TARGET_TYPE", "STATIC_LIBRARY");
-        let sysroot = find_emscripten_sysroot()
-            .ok_or_else(|| "failed to locate Emscripten sysroot (expected emcc/../cache/sysroot)")?;
+        let sysroot = find_emscripten_sysroot().ok_or_else(
+            || "failed to locate Emscripten sysroot (expected emcc/../cache/sysroot)",
+        )?;
         // Use Emscripten sysroot for PROJ C/C++ so libc++/pthread headers resolve cleanly.
         // We still build sqlite separately with local shims.
         let c_flags = format!(
@@ -118,7 +123,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("cargo:rustc-link-lib=static=proj");
     }
-    println!("cargo:rustc-link-search=native={}", proj.join("lib").display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        proj.join("lib").display()
+    );
 
     if target == "wasm32-unknown-unknown" {
         if let Some(lib_dir) = find_emscripten_lib_dir() {
@@ -170,7 +178,10 @@ fn find_required_tool(candidates: &[&str]) -> Result<PathBuf, io::Error> {
     }
     Err(io::Error::new(
         io::ErrorKind::NotFound,
-        format!("required tool not found in PATH: {}", candidates.join(" or ")),
+        format!(
+            "required tool not found in PATH: {}",
+            candidates.join(" or ")
+        ),
     ))
 }
 
@@ -219,7 +230,11 @@ fn find_emscripten_lib_dir() -> Option<PathBuf> {
     }
 }
 
-fn build_sqlite_with_shim(manifest_dir: &Path, out_dir: &Path, c_compiler: &Path) -> (PathBuf, PathBuf) {
+fn build_sqlite_with_shim(
+    manifest_dir: &Path,
+    out_dir: &Path,
+    c_compiler: &Path,
+) -> (PathBuf, PathBuf) {
     const SQLITE_FEATURES: [&str; 23] = [
         "-DSQLITE_OS_OTHER",
         "-DSQLITE_USE_URI",
