@@ -1,105 +1,45 @@
 # proj-lite
 
-Minimal Rust bindings for PROJ focused on point transforms.
+> [!WARNING]
+> The current codebase was initially generated with assistance from Codex.
 
-## WASM Notes (Current Setup)
+This repository is an experiment to answer one question:
 
-This repository is currently focused on `wasm32-unknown-emscripten`.
+Can a Rust crate that wraps **PROJ** be built and run in a web browser?
 
-- `proj-lite-sys` builds bundled PROJ from `proj-lite-sys/vendor/proj-9.8.0.tar.gz`.
-- The browser demo uses `wasm-bindgen` output generated from the emscripten target.
-- CI and Pages build with Emsdk and `wasm32-unknown-emscripten`.
+## Result
 
-### Postmortem: `wasm32-unknown-unknown` attempt
+Short answer: partially.
 
-We attempted to migrate to `wasm32-unknown-unknown` and reverted.
+- It **does run in browsers**.
+- But it does **not run as a clean, standalone browser module**.
+- It still needs browser-side runtime shims for imports like `wasi_snapshot_preview1` and `env`.
 
-Main failure points:
+So this experiment is a practical success, but architecturally a partial failure.
 
-- Browser-side module resolution became brittle (`env` imports were emitted as bare specifiers).
-- PROJ + C++ runtime requirements pulled in a wide host import surface (`env` symbols), which required large custom shims.
-- CI frequently failed on libc++/threading integration (`No thread API` and related C++ threading symbol errors).
-- The setup became harder to keep deterministic across local + CI + Pages than the emscripten flow.
+## Why this happened
 
-Decision:
+The main reason is that PROJ is a large C++ codebase, not an amalgamated C library like SQLite.
 
-- Keep `wasm32-unknown-emscripten` as the supported web target for now.
-- Revisit `wasm32-unknown-unknown` only after upstream/toolchain constraints become simpler.
+- C++ runtime and exception behavior pull in more host/runtime expectations.
+- Those expectations appear as WASI/env imports that browsers do not provide directly.
+- We therefore need shim modules in the web app.
 
-### Required build environment for wasm32-unknown-emscripten
+## Why `wasm32-unknown-emscripten`
 
-- Emsdk installed and available in `PATH` (for `emcc`, `emar`, `emranlib`, Emscripten sysroot).
-- `sqlite3` CLI available in `PATH` (or set `SQLITE3_BIN`).
-- `wasm-bindgen-cli` for generating JS glue.
+We also tried `wasm32-unknown-unknown`.
+In practice, we ended up with the same class of runtime gap (host imports that need browser-side support), plus more fragile integration.
 
-### Troubleshooting
+So the current project uses `wasm32-unknown-emscripten` as the more workable path.
 
-- `warning: proj-lite-sys@... Compiler family detection failed ... detect_compiler_family.c`
-  - These warnings come from `cc-rs` probing the compiler and are expected in this setup.
-  - If the build continues and finishes, they can be ignored.
+## Current status
 
-- `cannot use 'try' with exceptions disabled` during PROJ C++ compile
-  - Ensure `proj-lite-sys/build.rs` keeps emscripten C/C++ flags with `-fexceptions`.
+- Browser demo works with shim modules.
+- CI and GitHub Pages publish this shim-based setup.
 
-- `sqlite3 not found in PATH`
-  - Install `sqlite3` or set `SQLITE3_BIN` to the sqlite3 executable path.
+## Usage
 
-## Disclaimer
-
-The current codebase was initially generated with assistance from Codex.
-Ongoing development is expected to include substantial hand-written changes.
-
-## Scope
-
-- Minimal high-level API:
-  - `Proj::new(definition)`
-  - `Proj::new_known_crs(from, to)`
-  - `transform2(coord)`
-  - `transform3(coord)`
-- Bundled build only (no system `pkg-config` lookup path)
-- Optional/network features intentionally omitted
-
-## Bundled dependencies
-
-- PROJ source is always built from `proj-lite-sys/vendor/proj-9.8.0.tar.gz` (official `dist` archive content).
-- `libsqlite3-sys` is used with `bundled` enabled.
-- `libcurl` and `libtiff` are disabled in the PROJ CMake build.
-
-### Bundled PROJ source license
-
-This repository vendors PROJ source distribution content from OSGeo/PROJ.
-
-- The bundled PROJ source is licensed under the PROJ upstream license.
-- See the bundled source `COPYING` file for the exact terms.
-- Keep that license text when redistributing builds that include bundled PROJ.
-
-### Updating bundled PROJ source
-
-- Submodule checkout: `proj-lite-sys/vendor/proj`
-- Build + extract official source distribution:
-  - `proj-lite-sys/vendor/update_proj_vendor.sh`
-- The crate build extracts `proj-lite-sys/vendor/proj-<version>.tar.gz` into `OUT_DIR` during build.
-- `proj-lite-sys/vendor/proj/**` is excluded from crate packaging to avoid shipping the entire git repository.
-
-## sqlite3 for proj.db generation
-
-PROJ generates `proj.db` at build time.
-
-- If `SQLITE3_BIN` is set, that executable is used.
-- Otherwise:
-  - On Windows: `sqlite3.exe` is searched in `PATH`.
-  - On non-Windows: `sqlite3` is searched in `PATH`.
-  - If not found, the build fails.
-
-## WASM support
-
-Current supported WASM target:
-
-- `wasm32-unknown-emscripten` (for npm/web packaging via `proj-lite-web`)
-
-## Examples
-
-### Convert coordinates between known CRS
+### Rust (native)
 
 ```rust
 use proj_lite::Proj;
@@ -109,23 +49,6 @@ let out = tf.transform2((4_760_096.421_921, 3_744_293.729_449))?;
 println!("{out:?}");
 # Ok::<(), proj_lite::ProjError>(())
 ```
-
-### Use a custom PROJ pipeline
-
-```rust
-use proj_lite::Proj;
-
-let tf = Proj::new(
-    "+proj=pipeline \
-     +step +proj=longlat +datum=WGS84 \
-     +step +proj=merc +datum=WGS84"
-)?;
-let out = tf.transform2((-122.4194, 37.7749))?;
-println!("{out:?}");
-# Ok::<(), proj_lite::ProjError>(())
-```
-
-### `transform2` / `transform3` with WKT coordinates
 
 ```rust
 use proj_lite::Proj;
@@ -138,20 +61,84 @@ let point3d = match Wkt::<f64>::from_str("POINT Z (-122.4194 37.7749 10.0)")? {
     _ => unreachable!(),
 };
 
-// transform2:
-// - accepts 2D or 3D+ CoordTrait input
-// - uses x/y and discards z (if present)
 let xy = tf.transform2(point3d.clone())?;
-println!("{xy:?}");
-
-// transform3:
-// - accepts 2D or 3D+ CoordTrait input
-// - if input is 2D, z is filled with 0.0
-let xyz_from_2d = tf.transform3((-122.4194, 37.7749))?;
-let xyz_from_3d = tf.transform3(point3d)?;
-println!("{xyz_from_2d:?} {xyz_from_3d:?}");
+let xyz = tf.transform3(point3d)?;
+println!("{xy:?} {xyz:?}");
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
+
+### Rust (WASM entrypoint)
+
+```rust
+#[wasm_bindgen]
+pub fn transform2_known_crs(
+    from_crs: &str,
+    to_crs: &str,
+    x: f64,
+    y: f64,
+) -> Result<Vec<f64>, JsValue> {
+    let proj = proj_lite::Proj::new_known_crs(from_crs, to_crs)
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let (xo, yo) = proj
+        .transform2((x, y))
+        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    Ok(vec![xo, yo])
+}
+```
+
+### JavaScript (browser)
+
+```js
+import * as env from "./npm/env.js"; // Emscripten libc/syscall shim module
+import * as wasi from "./npm/wasi_snapshot_preview1.js"; // WASI shim module for browser runtime
+
+const wasmUrl = new URL("./npm/proj_lite_web_bg.wasm", import.meta.url);
+const wasmBytes = await (await fetch(wasmUrl)).arrayBuffer();
+const { instance } = await WebAssembly.instantiate(wasmBytes, {
+  env, // Provides host functions imported under module name "env"
+  wasi_snapshot_preview1: wasi, // Maps WASI imports to our browser shim implementation
+});
+const wasm = instance.exports;
+if (typeof wasm._initialize === "function") wasm._initialize();
+wasi.__setWasiMemory(wasm.memory);
+
+const encode = new TextEncoder();
+const alloc = (s) => {
+  const b = encode.encode(s);
+  const p = wasm.malloc(b.length);
+  new Uint8Array(wasm.memory.buffer, p, b.length).set(b);
+  return [p, b.length];
+};
+
+const [fromPtr, fromLen] = alloc("EPSG:2230");
+const [toPtr, toLen] = alloc("EPSG:26946");
+const outPtr = wasm.malloc(16);
+const rc = wasm.transform2_known_crs_raw(
+  fromPtr,
+  fromLen,
+  toPtr,
+  toLen,
+  4760096.421921,
+  3744293.729449,
+  outPtr,
+);
+if (rc !== 0) throw new Error("transform failed");
+
+const out = new Float64Array(wasm.memory.buffer, outPtr, 2);
+console.log(out[0], out[1]);
+```
+
+Technical build/runtime details are documented separately:
+
+- `docs/web-build.md`
+
+## Bundled PROJ source license
+
+This repository vendors PROJ source distribution content from OSGeo/PROJ.
+
+- The bundled PROJ source is licensed under the PROJ upstream license.
+- See the bundled source `COPYING` file for the exact terms.
+- Keep that license text when redistributing builds that include bundled PROJ.
 
 ## Credits
 
@@ -163,36 +150,3 @@ The implementation and build strategy were informed by these repositories:
   - PROJ source code and CMake/build configuration.
 - https://github.com/Spxg/sqlite-wasm-rs
   - SQLite/WASM build ideas.
-
-## Quick start
-
-```bash
-cargo check
-cargo test
-```
-
-## Build npm package from Rust WASM
-
-```bash
-cargo build --release --target wasm32-unknown-emscripten -p proj-lite-web
-wasm-bindgen \
-  --out-dir ./npm \
-  --typescript \
-  --target web \
-  ./target/wasm32-unknown-emscripten/release/proj_lite_web.wasm
-```
-
-This generates JS/TS bindings and `.wasm` under `npm/` (with metadata in `npm/package.json`).
-
-## Simple web demo
-
-After generating `npm/` artifacts, serve the repository root with any static server and open `web/index.html`.
-The page imports `../npm/proj_lite_web.js` and runs a single-point CRS transform.
-
-## GitHub Pages deployment
-
-Workflow: `.github/workflows/pages.yml`
-
-- Builds `proj-lite-web` for `wasm32-unknown-emscripten`
-- Runs `wasm-bindgen` to generate the npm package files
-- Publishes `web/` + generated package files to GitHub Pages

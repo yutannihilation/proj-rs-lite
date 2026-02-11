@@ -19,9 +19,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proj_src = src_root.join(format!("proj-{PROJ_VERSION}"));
     let target = env::var("TARGET").unwrap_or_default();
 
+    // Always build PROJ from the vendored release archive for reproducibility.
+    // We intentionally do not probe system PROJ installations.
     unpack_tarball(&tarball, &src_root)?;
 
     let mut config = cmake::Config::new(&proj_src);
+    // Build only the static library needed by proj-lite.
+    // All CLI tools/tests are disabled to keep build size/time predictable in CI.
     config.define("BUILD_SHARED_LIBS", "OFF");
     config.define("BUILD_TESTING", "OFF");
     config.define("BUILD_APPS", "OFF");
@@ -32,12 +36,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     config.define("BUILD_PROJ", "OFF");
     config.define("BUILD_PROJINFO", "OFF");
     config.define("BUILD_PROJSYNC", "OFF");
+    // We want a self-contained browser-friendly build:
+    // - disable network/download path (curl/projsync/fetch)
+    // - disable TIFF dependency to reduce transitive native surface
     config.define("ENABLE_CURL", "OFF");
     config.define("ENABLE_TIFF", "OFF");
     config.define("ENABLE_EMSCRIPTEN_FETCH", "OFF");
+    // Embed PROJ resource files so runtime does not depend on external data files.
+    // This is important for browser usage where filesystem access is constrained.
     config.define("EMBED_RESOURCE_FILES", "ON");
     config.define("USE_ONLY_EMBEDDED_RESOURCE_FILES", "ON");
 
+    // PROJ's CMake build requires sqlite3 CLI to generate proj.db at build time.
+    // We resolve it explicitly for deterministic behavior across local/CI platforms.
     let sqlite3_exe = match env::var("SQLITE3_BIN") {
         Ok(val) => PathBuf::from(val),
         Err(_) if cfg!(windows) => find_in_path("sqlite3.exe").ok_or_else(|| {
@@ -49,6 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     config.define("EXE_SQLITE3", sqlite3_exe.display().to_string());
 
+    // Prefer sqlite built by libsqlite3-sys and pass exact include/library paths to CMake.
+    // This avoids CMake selecting a different host sqlite by accident.
     if let Ok(sqlite_include) = env::var("DEP_SQLITE3_INCLUDE") {
         config.define("SQLite3_INCLUDE_DIR", sqlite_include);
     }
@@ -65,7 +78,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if target == "wasm32-unknown-emscripten" {
-        // Match Rust's wasm32-unknown-emscripten EH mode to avoid mixed JS EH/wasm EH objects.
+        // Keep C/C++ object feature set aligned with final Rust+Emscripten link:
+        // - -pthread/-matomics/-mbulk-memory: coherent Emscripten threading+wasm features
+        // - -fwasm-exceptions: match Rust target EH model
+        // Mismatches here caused past errors such as:
+        //   undefined symbol: __resumeException
+        //   undefined symbol: llvm_eh_typeid_for
         let flags = "-pthread -matomics -mbulk-memory -fwasm-exceptions";
         config.define("CMAKE_C_FLAGS", flags);
         config.define("CMAKE_CXX_FLAGS", flags);
@@ -87,13 +105,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         proj.join("lib").display()
     );
 
-    if target.contains("apple-darwin") {
-        println!("cargo:rustc-link-lib=c++");
-    } else if target.contains("linux") {
-        println!("cargo:rustc-link-lib=stdc++");
-    }
-
     if target.contains("windows") {
+        // Required by PROJ on Windows for known-folder and COM allocator APIs.
         println!("cargo:rustc-link-lib=shell32");
         println!("cargo:rustc-link-lib=ole32");
     }
@@ -117,6 +130,7 @@ fn unpack_tarball(tarball: &Path, dst: &Path) -> Result<(), Box<dyn std::error::
         .into());
     }
     if dst.exists() {
+        // OUT_DIR can persist across incremental builds; replace tree to avoid stale sources.
         std::fs::remove_dir_all(dst)?;
     }
     std::fs::create_dir_all(dst)?;
