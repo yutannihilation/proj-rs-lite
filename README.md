@@ -11,11 +11,12 @@ Can a Rust crate that wraps **PROJ** be built and run in a web browser?
 
 Short answer: partially.
 
-- It **does run in browsers**.
+- It **does run in browsers** ([demo](https://yutannihilation.github.io/proj-rs-lite/)).
 - But it does **not run as a clean, standalone browser module**.
 - It still needs browser-side runtime shims for imports like `wasi_snapshot_preview1` and `env`.
 
 So this experiment is a practical success, but architecturally a partial failure.
+Please refer to [`docs/web-build.md`](docs/web-build.md) for the details about build configurations.
 
 ## Why this happened
 
@@ -127,10 +128,6 @@ if (rc !== 0) throw new Error("transform failed");
 const out = new Float64Array(wasm.memory.buffer, outPtr, 2);
 console.log(out[0], out[1]);
 ```
-
-Technical build/runtime details are documented separately:
-
-- `docs/web-build.md`
 
 ## Bundled PROJ source license
 
