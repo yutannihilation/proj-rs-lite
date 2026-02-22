@@ -1,3 +1,0 @@
-[submodule "proj-lite-sys/vendor/proj"]
-	path = proj-lite-sys/vendor/proj
-	url = https://github.com/OSGeo/PROJ.git
