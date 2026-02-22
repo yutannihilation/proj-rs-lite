@@ -2,19 +2,28 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUBMODULE_DIR="${SCRIPT_DIR}/proj"
+PROJ_REPO_URL="https://github.com/OSGeo/PROJ.git"
 
-if [[ ! -f "${SUBMODULE_DIR}/CMakeLists.txt" ]]; then
-  echo "error: missing submodule at ${SUBMODULE_DIR}" >&2
-  echo "run: git submodule update --init --recursive" >&2
+if [[ $# -gt 1 ]]; then
+  echo "usage: $0 [tag-or-commit]" >&2
   exit 1
 fi
 
-BUILD_DIR="$(mktemp -d)"
-trap 'rm -rf "${BUILD_DIR}"' EXIT
+REF="${1:-master}"
 
-echo "Building official PROJ dist archive from submodule..."
-cmake -S "${SUBMODULE_DIR}" -B "${BUILD_DIR}" -D BUILD_TESTING=OFF
+WORK_DIR="$(mktemp -d)"
+SRC_DIR="${WORK_DIR}/proj"
+BUILD_DIR="${WORK_DIR}/build"
+trap 'rm -rf "${WORK_DIR}"' EXIT
+
+echo "Fetching PROJ (${REF}) from ${PROJ_REPO_URL}..."
+git init "${SRC_DIR}" >/dev/null
+git -C "${SRC_DIR}" remote add origin "${PROJ_REPO_URL}"
+git -C "${SRC_DIR}" fetch --depth 1 origin "${REF}"
+git -C "${SRC_DIR}" checkout --detach FETCH_HEAD >/dev/null
+
+echo "Building official PROJ dist archive..."
+cmake -S "${SRC_DIR}" -B "${BUILD_DIR}" -D BUILD_TESTING=OFF
 cmake --build "${BUILD_DIR}" --target dist
 
 ARCHIVE="$(ls -1 "${BUILD_DIR}"/proj-*.tar.gz | head -n 1 || true)"
