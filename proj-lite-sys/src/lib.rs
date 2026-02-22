@@ -7,6 +7,7 @@ extern crate libsqlite3_sys;
 extern crate link_cplusplus;
 
 use core::ffi::{c_char, c_double, c_int, c_void};
+use core::mem::size_of;
 
 #[repr(C)]
 pub struct PJ_CONTEXT {
@@ -81,4 +82,22 @@ unsafe extern "C" {
     pub fn proj_errno_string(err: c_int) -> *const c_char;
 
     pub fn proj_trans(obj: *mut PJconsts, direction: PJ_DIRECTION, coord: PJ_COORD) -> PJ_COORD;
+    pub fn proj_trans_generic(
+        obj: *mut PJconsts,
+        direction: PJ_DIRECTION,
+        x: *mut c_double,
+        sx: usize,
+        nx: usize,
+        y: *mut c_double,
+        sy: usize,
+        ny: usize,
+        z: *mut c_double,
+        sz: usize,
+        nz: usize,
+        t: *mut c_double,
+        st: usize,
+        nt: usize,
+    ) -> usize;
 }
+
+pub const PJ_F64_STRIDE: usize = size_of::<c_double>();

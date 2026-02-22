@@ -1,9 +1,9 @@
 use geo_traits::CoordTrait;
 use proj_sys::{
-    PJ_CONTEXT, PJ_COORD, PJ_DIRECTION_PJ_FWD, PJ_XYZT, PJconsts, proj_context_create,
-    proj_context_destroy, proj_context_errno, proj_context_errno_string, proj_create,
-    proj_create_crs_to_crs, proj_destroy, proj_errno, proj_errno_reset, proj_errno_string,
-    proj_normalize_for_visualization, proj_trans,
+    PJ_CONTEXT, PJ_COORD, PJ_DIRECTION_PJ_FWD, PJ_F64_STRIDE, PJ_XYZT, PJconsts,
+    proj_context_create, proj_context_destroy, proj_context_errno, proj_context_errno_string,
+    proj_create, proj_create_crs_to_crs, proj_destroy, proj_errno, proj_errno_reset,
+    proj_errno_string, proj_normalize_for_visualization, proj_trans, proj_trans_generic,
 };
 use std::ffi::{CStr, CString};
 use std::ptr;
@@ -23,6 +23,8 @@ pub enum ProjError {
     Transform(String),
     #[error("unsupported coordinate dimensions: {0}")]
     UnsupportedDimensions(usize),
+    #[error("inconsistent batch lengths: x={x}, y={y}, z={z}")]
+    InconsistentBatchLengths { x: usize, y: usize, z: usize },
 }
 
 pub struct Proj {
@@ -136,6 +138,85 @@ impl Proj {
         let xyz = unsafe { transformed.xyzt };
         Ok((xyz.x, xyz.y, xyz.z))
     }
+
+    /// Transform points in-place as `(x, y)` pairs.
+    pub fn transform_batch2(&self, x: &mut [f64], y: &mut [f64]) -> Result<(), ProjError> {
+        if x.len() != y.len() {
+            return Err(ProjError::InconsistentBatchLengths {
+                x: x.len(),
+                y: y.len(),
+                z: 0,
+            });
+        }
+
+        unsafe {
+            proj_errno_reset(self.proj);
+            proj_trans_generic(
+                self.proj,
+                PJ_DIRECTION_PJ_FWD,
+                x.as_mut_ptr(),
+                PJ_F64_STRIDE,
+                x.len(),
+                y.as_mut_ptr(),
+                PJ_F64_STRIDE,
+                y.len(),
+                ptr::null_mut(),
+                0,
+                0,
+                ptr::null_mut(),
+                0,
+                0,
+            );
+        }
+        let err = unsafe { proj_errno(self.proj) };
+        if err != 0 {
+            return Err(ProjError::Transform(proj_error_message(err)));
+        }
+
+        Ok(())
+    }
+
+    /// Transform points in-place as `(x, y, z)` tuples.
+    pub fn transform_batch3(
+        &self,
+        x: &mut [f64],
+        y: &mut [f64],
+        z: &mut [f64],
+    ) -> Result<(), ProjError> {
+        if x.len() != y.len() || x.len() != z.len() {
+            return Err(ProjError::InconsistentBatchLengths {
+                x: x.len(),
+                y: y.len(),
+                z: z.len(),
+            });
+        }
+
+        unsafe {
+            proj_errno_reset(self.proj);
+            proj_trans_generic(
+                self.proj,
+                PJ_DIRECTION_PJ_FWD,
+                x.as_mut_ptr(),
+                PJ_F64_STRIDE,
+                x.len(),
+                y.as_mut_ptr(),
+                PJ_F64_STRIDE,
+                y.len(),
+                z.as_mut_ptr(),
+                PJ_F64_STRIDE,
+                z.len(),
+                ptr::null_mut(),
+                0,
+                0,
+            );
+        }
+        let err = unsafe { proj_errno(self.proj) };
+        if err != 0 {
+            return Err(ProjError::Transform(proj_error_message(err)));
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for Proj {
@@ -245,5 +326,55 @@ mod tests {
         assert!((out.0 - out_zero.0).abs() < 1e-10);
         assert!((out.1 - out_zero.1).abs() < 1e-10);
         assert!((out.2 - out_zero.2).abs() < 1e-10);
+    }
+
+    #[test]
+    fn batch2_matches_point_transform() {
+        let tf = Proj::new_known_crs("EPSG:2230", "EPSG:26946").expect("create transformer");
+        let mut x = vec![4_760_096.421_921];
+        let mut y = vec![3_744_293.729_449];
+        tf.transform_batch2(&mut x, &mut y).expect("transform batch");
+        let single = tf
+            .transform2((4_760_096.421_921, 3_744_293.729_449))
+            .expect("transform point");
+
+        assert!((x[0] - single.0).abs() < 1e-10);
+        assert!((y[0] - single.1).abs() < 1e-10);
+    }
+
+    #[test]
+    fn batch3_matches_point_transform() {
+        let tf = Proj::new_known_crs("EPSG:4326", "EPSG:4979").expect("create transformer");
+        let mut x = vec![-122.4194];
+        let mut y = vec![37.7749];
+        let mut z = vec![10.0];
+        tf.transform_batch3(&mut x, &mut y, &mut z)
+            .expect("transform batch");
+        let coord = parse_point_coord("POINT Z (-122.4194 37.7749 10.0)");
+        let single = tf
+            .transform3(coord)
+            .expect("transform point");
+
+        assert!((x[0] - single.0).abs() < 1e-10);
+        assert!((y[0] - single.1).abs() < 1e-10);
+        assert!((z[0] - single.2).abs() < 1e-10);
+    }
+
+    #[test]
+    fn batch_transform_rejects_length_mismatch() {
+        let tf = Proj::new_known_crs("EPSG:4326", "EPSG:4979").expect("create transformer");
+
+        let mut x = vec![1.0, 2.0];
+        let mut y = vec![3.0];
+        let mut z = vec![4.0, 5.0];
+
+        assert!(matches!(
+            tf.transform_batch2(&mut x, &mut y),
+            Err(super::ProjError::InconsistentBatchLengths { .. })
+        ));
+        assert!(matches!(
+            tf.transform_batch3(&mut x, &mut y, &mut z),
+            Err(super::ProjError::InconsistentBatchLengths { .. })
+        ));
     }
 }
