@@ -89,8 +89,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.define("CMAKE_CXX_FLAGS", flags);
     }
 
-    if cfg!(target_env = "msvc") {
+    if target.contains("msvc") {
         config.profile("Release");
+
+        // Keep CMake's CRT runtime model aligned with Rust's target features.
+        // cargo-dist commonly enables `+crt-static` on Windows, and if C/C++
+        // objects are built with /MD while Rust expects /MT (or vice versa),
+        // the final link fails with many unresolved __imp_* CRT symbols.
+        let target_features = env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or_default();
+        let use_static_crt = target_features
+            .split(',')
+            .any(|feature| feature.trim() == "crt-static");
+        let msvc_runtime = if use_static_crt {
+            "MultiThreaded"
+        } else {
+            "MultiThreadedDLL"
+        };
+        config.static_crt(use_static_crt);
+        config.define("CMAKE_MSVC_RUNTIME_LIBRARY", msvc_runtime);
     }
 
     let proj = config.build();
