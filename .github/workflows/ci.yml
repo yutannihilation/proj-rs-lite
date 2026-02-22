@@ -63,3 +63,23 @@ jobs:
 
       - name: Cargo check (wasm32-unknown-emscripten)
         run: cargo check --target wasm32-unknown-emscripten
+
+  wasm-wasip1:
+    name: WASM (wasm32-wasip1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo check (wasm32-wasip1)
+        run: cargo check --target wasm32-wasip1
+
+      - name: Cargo test (wasm32-wasip1, no-run)
+        run: cargo test --target wasm32-wasip1 --no-run
