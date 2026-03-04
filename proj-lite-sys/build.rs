@@ -80,19 +80,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if target == "wasm32-unknown-emscripten" {
         // Keep C/C++ object feature set aligned with final Rust+Emscripten link:
         // - -pthread/-matomics/-mbulk-memory: coherent Emscripten threading+wasm features
-        // - -fno-exceptions: disable C++ exceptions in PROJ for the Wasm build.
-        //   The Rust wrapper communicates errors via return codes (proj_errno etc.),
-        //   not C++ exceptions, so disabling them here is safe.  Using
-        //   -fwasm-exceptions instead causes wasm-bindgen to fail with:
-        //     "failed to generate catch wrappers: __instance_terminated global
-        //      required for catch wrappers"
-        //   because PROJ's compiled output then contains Wasm exception
-        //   instructions that wasm-bindgen cannot process without the
-        //   Emscripten __instance_terminated runtime global.
-        //   Disabling exceptions entirely avoids both that issue and the
-        //   previous undefined-symbol errors (__resumeException,
-        //   llvm_eh_typeid_for) from the legacy JS exception model.
-        let flags = "-pthread -matomics -mbulk-memory -fno-exceptions";
+        // - -fwasm-exceptions: required by PROJ 9.8.0 C++ sources using try/catch.
+        //   This also avoids unresolved symbols such as __resumeException and
+        //   llvm_eh_typeid_for from the legacy JS exception model.
+        let flags = "-pthread -matomics -mbulk-memory -fwasm-exceptions";
         config.define("CMAKE_C_FLAGS", flags);
         config.define("CMAKE_CXX_FLAGS", flags);
     }

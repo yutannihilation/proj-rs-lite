@@ -6,6 +6,8 @@ use wasm_bindgen::prelude::*;
 
 static mut LAST_ERROR_BUF: [u8; 1024] = [0; 1024];
 static mut LAST_ERROR_LEN: usize = 0;
+#[unsafe(no_mangle)]
+pub static mut __instance_terminated: i32 = 0;
 
 fn set_last_error(msg: &str) {
     let bytes = msg.as_bytes();
