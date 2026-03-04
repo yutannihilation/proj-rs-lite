@@ -6,13 +6,6 @@ use wasm_bindgen::prelude::*;
 
 static mut LAST_ERROR_BUF: [u8; 1024] = [0; 1024];
 static mut LAST_ERROR_LEN: usize = 0;
-// wasm-bindgen's catch-wrapper generation for Emscripten-produced modules
-// expects this global to exist. We only provide the symbol; runtime behavior
-// is unchanged for the raw exported API below. Rust code never reads/writes
-// this symbol; it is only present to satisfy the linker/exported-global
-// requirement from wasm-bindgen/Emscripten.
-#[unsafe(no_mangle)]
-static mut __instance_terminated: i32 = 0;
 
 fn set_last_error(msg: &str) {
     let bytes = msg.as_bytes();
@@ -49,7 +42,10 @@ pub extern "C" fn transform2_known_crs_raw(
     y: f64,
     out_xy_ptr: *mut f64,
 ) -> i32 {
-    if out_xy_ptr.is_null() || (from_len > 0 && from_ptr.is_null()) || (to_len > 0 && to_ptr.is_null()) {
+    if out_xy_ptr.is_null()
+        || (from_len > 0 && from_ptr.is_null())
+        || (to_len > 0 && to_ptr.is_null())
+    {
         set_last_error("invalid pointer argument");
         return 1;
     }
@@ -104,8 +100,8 @@ pub fn transform2_known_crs(
     x: f64,
     y: f64,
 ) -> Result<Vec<f64>, JsValue> {
-    let proj = Proj::new_known_crs(from_crs, to_crs)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let proj =
+        Proj::new_known_crs(from_crs, to_crs).map_err(|e| JsValue::from_str(&e.to_string()))?;
     let out = proj
         .transform2((x, y))
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
