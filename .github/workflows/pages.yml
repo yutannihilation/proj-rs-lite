@@ -43,7 +43,7 @@ jobs:
       - name: Install wasm-bindgen CLI
         run: |
           curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-          cargo binstall --force -y wasm-bindgen-cli
+          cargo binstall --force -y wasm-bindgen-cli@0.2.113
 
       - name: Build WebAssembly package
         run: |
