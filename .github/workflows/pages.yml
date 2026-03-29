@@ -53,6 +53,7 @@ jobs:
             --typescript \
             --target web \
             ./target/wasm32-unknown-emscripten/release/proj_lite_web.wasm
+          ls ./npm
 
       - name: Prepare static site
         run: |
