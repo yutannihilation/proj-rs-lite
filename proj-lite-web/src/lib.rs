@@ -2,15 +2,9 @@ use proj_lite::Proj;
 use std::ptr;
 use std::slice;
 use std::str;
-use wasm_bindgen::prelude::*;
 
 static mut LAST_ERROR_BUF: [u8; 1024] = [0; 1024];
 static mut LAST_ERROR_LEN: usize = 0;
-// wasm-bindgen's catch-wrapper generation for Emscripten-produced modules
-// expects this global to exist. Rust code never reads/writes this symbol;
-// it only satisfies the wasm-bindgen exported-global requirement.
-#[unsafe(no_mangle)]
-static mut __instance_terminated: i32 = 0;
 
 fn set_last_error(msg: &str) {
     let bytes = msg.as_bytes();
@@ -96,19 +90,4 @@ pub extern "C" fn transform2_known_crs_raw(
     }
     clear_last_error();
     0
-}
-
-#[wasm_bindgen]
-pub fn transform2_known_crs(
-    from_crs: &str,
-    to_crs: &str,
-    x: f64,
-    y: f64,
-) -> Result<Vec<f64>, JsValue> {
-    let proj =
-        Proj::new_known_crs(from_crs, to_crs).map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let out = proj
-        .transform2((x, y))
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    Ok(vec![out.0, out.1])
 }

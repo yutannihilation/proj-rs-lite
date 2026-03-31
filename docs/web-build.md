@@ -6,18 +6,16 @@ This file describes the current shim-based web build configuration.
 
 - Rust target: `wasm32-unknown-emscripten`
 - Toolchain: Emscripten (Emsdk)
-- Binding generator: `wasm-bindgen`
 
 ## Build command
 
 ```bash
 cargo build --release --target wasm32-unknown-emscripten -p proj-lite-web
-wasm-bindgen \
-  --out-dir ./npm \
-  --typescript \
-  --target web \
-  ./target/wasm32-unknown-emscripten/release/proj_lite_web.wasm
 ```
+
+The compiled wasm is loaded directly in the browser via `web/init.js`,
+which provides `env` and `wasi_snapshot_preview1` imports at instantiation
+time. No post-processing step (e.g. wasm-bindgen CLI) is needed.
 
 For emscripten linking, `.cargo/config.toml` sets:
 
@@ -91,7 +89,7 @@ Why each flag exists:
 
 - `--no-entry`
   - Produces a module-style wasm artifact (no C `main` entrypoint required).
-  - Required for library-style wasm output consumed by `wasm-bindgen`.
+  - Required for library-style wasm output loaded directly in the browser.
   - Without it, link fails with:
     - `wasm-ld: ... undefined symbol: main`
 
@@ -148,8 +146,8 @@ Browsers do not provide these, so we map them via import map and local shim modu
 - CI WASM check: `.github/workflows/ci.yml` (`wasm32-unknown-emscripten`)
 - Pages publish flow: `.github/workflows/pages.yml`
   - Builds wasm package
-  - Copies `web/index.html`, `web/main.js`, and shim files into `site/npm`
-  - Copies generated wasm/js artifacts
+  - Copies `web/index.html`, `web/main.js`, `web/init.js`, and shim files into `site/npm`
+  - Copies the compiled wasm artifact directly (no wasm-bindgen post-processing)
 
 Keep CI and Pages on the same Emsdk version (currently `5.0.0`).
 Version skew can trigger linker/post-link incompatibilities such as:
