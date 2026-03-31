@@ -1,4 +1,4 @@
-import init from "./npm/proj_lite_web.js";
+import init from "./init.js";
 import { __setWasiMemory } from "wasi_snapshot_preview1";
 
 const resultEl = document.getElementById("result");
@@ -6,7 +6,7 @@ const runBtn = document.getElementById("run");
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-const wasm = await init();
+const wasm = await init("./npm/proj_lite_web.wasm");
 if (typeof wasm._initialize === "function") {
   wasm._initialize();
 }

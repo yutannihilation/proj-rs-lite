@@ -71,19 +71,16 @@ println!("{xy:?} {xyz:?}");
 ### Rust (WASM entrypoint)
 
 ```rust
-#[wasm_bindgen]
-pub fn transform2_known_crs(
-    from_crs: &str,
-    to_crs: &str,
-    x: f64,
-    y: f64,
-) -> Result<Vec<f64>, JsValue> {
-    let proj = proj_lite::Proj::new_known_crs(from_crs, to_crs)
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    let (xo, yo) = proj
-        .transform2((x, y))
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
-    Ok(vec![xo, yo])
+#[unsafe(no_mangle)]
+pub extern "C" fn transform2_known_crs_raw(
+    from_ptr: *const u8, from_len: usize,
+    to_ptr: *const u8, to_len: usize,
+    x: f64, y: f64,
+    out_xy_ptr: *mut f64,
+) -> i32 {
+    // Returns 0 on success, non-zero on error.
+    // See proj-lite-web/src/lib.rs for the full implementation.
+    // ...
 }
 ```
 
@@ -93,7 +90,7 @@ pub fn transform2_known_crs(
 import * as env from "./npm/env.js"; // Emscripten libc/syscall shim module
 import * as wasi from "./npm/wasi_snapshot_preview1.js"; // WASI shim module for browser runtime
 
-const wasmUrl = new URL("./npm/proj_lite_web_bg.wasm", import.meta.url);
+const wasmUrl = new URL("./npm/proj_lite_web.wasm", import.meta.url);
 const wasmBytes = await (await fetch(wasmUrl)).arrayBuffer();
 const { instance } = await WebAssembly.instantiate(wasmBytes, {
   env, // Provides host functions imported under module name "env"
