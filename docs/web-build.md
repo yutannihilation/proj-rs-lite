@@ -28,6 +28,7 @@ For emscripten linking, `.cargo/config.toml` sets:
 The current build has two flag layers:
 
 - C/C++ compile flags passed to PROJ via `proj-lite-sys/build.rs` (`CMAKE_C_FLAGS`/`CMAKE_CXX_FLAGS`)
+- C/C++ compile flags passed to cc-rs based crates via `.cargo/config.toml` environment variables
 - Rust linker arguments for `wasm32-unknown-emscripten` via `.cargo/config.toml`
 
 `proj-lite-sys/build.rs` now contains detailed inline comments next to each important
@@ -83,6 +84,19 @@ Related build-script config (also documented inline in code):
 - `EXE_SQLITE3` is explicitly resolved because PROJ needs sqlite3 CLI to build `proj.db`.
 - `SQLite3_INCLUDE_DIR` / `SQLite3_LIBRARY` are forwarded from `libsqlite3-sys` outputs
   to avoid CMake selecting a different host sqlite installation.
+
+### cc-rs compile flags (`.cargo/config.toml`)
+
+Active environment variables:
+
+- `CFLAGS_wasm32_unknown_emscripten=-fPIC`
+- `CXXFLAGS_wasm32_unknown_emscripten=-fPIC`
+
+Why these exist:
+
+- `libsqlite3-sys` and `link-cplusplus` are built by cc-rs, not by PROJ's CMake build.
+- The final `proj-lite-web` `cdylib` link uses Emscripten side-module mode, so every static C/C++ object linked into that wasm must be position-independent.
+- Setting only PROJ's CMake flags is not enough; sqlite's bundled `sqlite3.o` also needs `-fPIC`.
 
 ### Rust linker flags (`.cargo/config.toml`)
 
@@ -170,8 +184,9 @@ Version skew can trigger linker/post-link incompatibilities such as:
   - Current setup uses `-fwasm-exceptions` for emscripten C/C++ flags.
 
 - `relocation R_WASM_MEMORY_ADDR_SLEB cannot be used ... recompile with -fPIC`
-  - PROJ C/C++ objects were not built as position-independent code.
-  - Current setup enables `CMAKE_POSITION_INDEPENDENT_CODE=ON` and adds `-fPIC` for the emscripten C/C++ flags.
+  - A C/C++ object linked into the wasm side module was not built as position-independent code.
+  - If the failing archive is `libproj_lite_sys`, check the PROJ CMake `-fPIC` configuration in `proj-lite-sys/build.rs`.
+  - If the failing archive is `liblibsqlite3_sys` or `liblink_cplusplus`, check the cc-rs `CFLAGS_wasm32_unknown_emscripten` / `CXXFLAGS_wasm32_unknown_emscripten` settings in `.cargo/config.toml`.
 
 - `wasm-ld: ... undefined symbol: main`
   - Missing emscripten no-entry linker arguments (configured in `.cargo/config.toml`).

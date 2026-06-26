@@ -7,3 +7,7 @@ rustflags = [
   "-C",
   "link-arg=-sFILESYSTEM=0",
 ]
+
+[env]
+CFLAGS_wasm32_unknown_emscripten = "-fPIC"
+CXXFLAGS_wasm32_unknown_emscripten = "-fPIC"
