@@ -1,8 +1,11 @@
 [target.wasm32-unknown-emscripten]
 rustflags = [
-  "-Clink-arg=--no-entry",
-  "-Clink-arg=-sSTANDALONE_WASM=0",
-  "-Clink-arg=-sFILESYSTEM=0",
+  "-C",
+  "link-arg=--no-entry",
+  "-C",
+  "link-arg=-sSTANDALONE_WASM=0",
+  "-C",
+  "link-arg=-sFILESYSTEM=0",
 ]
 
 [env]
