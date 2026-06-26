@@ -22,13 +22,15 @@ For emscripten linking, `.cargo/config.toml` sets:
 - `--no-entry`
 - `-sSTANDALONE_WASM=0`
 - `-sFILESYSTEM=0`
+- `CFLAGS_wasm32_unknown_emscripten=-fPIC`
+- `CXXFLAGS_wasm32_unknown_emscripten=-fPIC`
 
 ## Compiler and linker flags (detailed)
 
-The current build has two flag layers:
+The current build has three flag surfaces:
 
-- C/C++ compile flags passed to PROJ via `proj-lite-sys/build.rs` (`CMAKE_C_FLAGS`/`CMAKE_CXX_FLAGS`)
-- C/C++ compile flags passed to cc-rs based crates via `.cargo/config.toml` environment variables
+- PROJ CMake settings and C/C++ compile flags in `proj-lite-sys/build.rs`
+- cc-rs C/C++ compile flags via `.cargo/config.toml` environment variables
 - Rust linker arguments for `wasm32-unknown-emscripten` via `.cargo/config.toml`
 
 `proj-lite-sys/build.rs` now contains detailed inline comments next to each important
@@ -36,9 +38,9 @@ configuration block. Use that file as the source-of-truth when updating flags.
 
 ### C/C++ compile flags (`proj-lite-sys/build.rs`)
 
-Active flags:
+Active settings/flags:
 
-- `-fPIC`
+- `CMAKE_POSITION_INDEPENDENT_CODE=ON`
 - `-pthread`
 - `-matomics`
 - `-mbulk-memory`
@@ -46,7 +48,7 @@ Active flags:
 
 Why each flag exists:
 
-- `-fPIC`
+- `CMAKE_POSITION_INDEPENDENT_CODE=ON`
   - Builds PROJ C/C++ objects as position-independent code.
   - Required because `proj-lite-web` is a Rust `cdylib`, which Emscripten links as a wasm side module (`-sSIDE_MODULE=2`).
   - Without this, release linking can fail with relocation errors such as:
@@ -94,9 +96,8 @@ Active environment variables:
 
 Why these exist:
 
-- `libsqlite3-sys` and `link-cplusplus` are built by cc-rs, not by PROJ's CMake build.
-- The final `proj-lite-web` `cdylib` link uses Emscripten side-module mode, so every static C/C++ object linked into that wasm must be position-independent.
-- Setting only PROJ's CMake flags is not enough; sqlite's bundled `sqlite3.o` also needs `-fPIC`.
+- `libsqlite3-sys` and `link-cplusplus` are built by cc-rs, outside PROJ's CMake build.
+- The final `proj-lite-web` `cdylib` link uses Emscripten side-module mode, so these static C/C++ objects also need `-fPIC`.
 
 ### Rust linker flags (`.cargo/config.toml`)
 
