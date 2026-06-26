@@ -37,12 +37,19 @@ configuration block. Use that file as the source-of-truth when updating flags.
 
 Active flags:
 
+- `-fPIC`
 - `-pthread`
 - `-matomics`
 - `-mbulk-memory`
 - `-fwasm-exceptions`
 
 Why each flag exists:
+
+- `-fPIC`
+  - Builds PROJ C/C++ objects as position-independent code.
+  - Required because `proj-lite-web` is a Rust `cdylib`, which Emscripten links as a wasm side module (`-sSIDE_MODULE=2`).
+  - Without this, release linking can fail with relocation errors such as:
+    - `relocation R_WASM_MEMORY_ADDR_SLEB cannot be used ... recompile with -fPIC`
 
 - `-pthread`
   - Enables thread-aware libc++/Emscripten headers and ABI expectations.
@@ -161,6 +168,10 @@ Version skew can trigger linker/post-link incompatibilities such as:
 - `undefined symbol: __resumeException` / `llvm_eh_typeid_for`
   - Exception model mismatch between compiled C++ objects and final link.
   - Current setup uses `-fwasm-exceptions` for emscripten C/C++ flags.
+
+- `relocation R_WASM_MEMORY_ADDR_SLEB cannot be used ... recompile with -fPIC`
+  - PROJ C/C++ objects were not built as position-independent code.
+  - Current setup enables `CMAKE_POSITION_INDEPENDENT_CODE=ON` and adds `-fPIC` for the emscripten C/C++ flags.
 
 - `wasm-ld: ... undefined symbol: main`
   - Missing emscripten no-entry linker arguments (configured in `.cargo/config.toml`).

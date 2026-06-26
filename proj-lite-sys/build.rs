@@ -79,11 +79,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if target == "wasm32-unknown-emscripten" {
         // Keep C/C++ object feature set aligned with final Rust+Emscripten link:
+        // - CMAKE_POSITION_INDEPENDENT_CODE/-fPIC: required because the Rust
+        //   cdylib is linked by Emscripten as a wasm side module.
         // - -pthread/-matomics/-mbulk-memory: coherent Emscripten threading+wasm features
         // - -fwasm-exceptions: required by PROJ 9.8.1 C++ sources using try/catch.
         //   This also avoids unresolved symbols such as __resumeException and
         //   llvm_eh_typeid_for from the legacy JS exception model.
-        let flags = "-pthread -matomics -mbulk-memory -fwasm-exceptions";
+        config.define("CMAKE_POSITION_INDEPENDENT_CODE", "ON");
+        let flags = "-fPIC -pthread -matomics -mbulk-memory -fwasm-exceptions";
         config.define("CMAKE_C_FLAGS", flags);
         config.define("CMAKE_CXX_FLAGS", flags);
     }
