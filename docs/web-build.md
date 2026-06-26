@@ -149,7 +149,7 @@ Browsers do not provide these, so we map them via import map and local shim modu
   - Copies `web/index.html`, `web/main.js`, `web/init.js`, and shim files into `site/npm`
   - Copies the compiled wasm artifact directly (no wasm-bindgen post-processing)
 
-Keep CI and Pages on the same Emsdk version (currently `5.0.0`).
+Keep CI and Pages on the same Emsdk version (currently `6.0.1`).
 Version skew can trigger linker/post-link incompatibilities such as:
 `Unknown option '--enable-bulk-memory-opt'` from `wasm-opt`.
 
