@@ -4,11 +4,11 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
-const PROJ_VERSION: &str = "9.8.0";
+const PROJ_VERSION: &str = "9.8.1";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-env-changed=SQLITE3_BIN");
-    println!("cargo:rerun-if-changed=vendor/proj-9.8.0.tar.gz");
+    println!("cargo:rerun-if-changed=vendor/proj-9.8.1.tar.gz");
 
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if target == "wasm32-unknown-emscripten" {
         // Keep C/C++ object feature set aligned with final Rust+Emscripten link:
         // - -pthread/-matomics/-mbulk-memory: coherent Emscripten threading+wasm features
-        // - -fwasm-exceptions: required by PROJ 9.8.0 C++ sources using try/catch.
+        // - -fwasm-exceptions: required by PROJ 9.8.1 C++ sources using try/catch.
         //   This also avoids unresolved symbols such as __resumeException and
         //   llvm_eh_typeid_for from the legacy JS exception model.
         let flags = "-pthread -matomics -mbulk-memory -fwasm-exceptions";

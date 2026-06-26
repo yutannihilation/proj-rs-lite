@@ -137,7 +137,7 @@ Browsers do not provide these, so we map them via import map and local shim modu
 
 ## Vendored sources
 
-- PROJ source is vendored as archive: `proj-lite-sys/vendor/proj-9.8.0.tar.gz`
+- PROJ source is vendored as archive: `proj-lite-sys/vendor/proj-9.8.1.tar.gz`
 - Build script extracts it into `OUT_DIR` at build time.
 - Local bundled C shim/sqlite sources were intentionally removed; only PROJ source is vendored.
 

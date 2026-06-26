@@ -6,7 +6,7 @@ PROJ_REPO_URL="https://github.com/OSGeo/PROJ.git"
 
 if [[ $# -ne 1 ]]; then
   echo "usage: $0 <version|commit-hash>" >&2
-  echo "  version:     e.g. 9.8.0  (downloads release archive)" >&2
+  echo "  version:     e.g. 9.8.1  (downloads release archive)" >&2
   echo "  commit-hash: e.g. abc123 (builds dist from git checkout)" >&2
   exit 1
 fi
@@ -50,7 +50,7 @@ elif [[ "${ARG}" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
   fi
 
 else
-  echo "error: argument must be a version (e.g. 9.8.0) or a commit hash (hex, 7-40 chars)" >&2
+  echo "error: argument must be a version (e.g. 9.8.1) or a commit hash (hex, 7-40 chars)" >&2
   exit 1
 fi
 
